@@ -57,7 +57,7 @@ fun DownloadedGridCard(
             ) {
                 Text(item.video.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(metadata?.displayAuthor ?: stringResource(R.string.download_unknown_author), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("时长：待补充", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.download_duration_pending), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("${item.video.quality} · ${item.video.length.formatFileSizeV2()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     IconButton(onClick = onDeleteVideo, modifier = Modifier.size(36.dp)) { Icon(painterResource(R.drawable.ic_baseline_delete_24), stringResource(R.string.delete)) }

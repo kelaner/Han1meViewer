@@ -126,15 +126,16 @@ fun DownloadScreen(
     }
 
     val displayGroups = downloadedGroups.toDisplayGroups()
-    val availableGenres = remember(downloadedItems, metadata) {
-        downloadedItems.map { metadata[it.video.id]?.displayGenre ?: "未知类型" }.distinct().sorted()
+    val unknownGenre = stringResource(R.string.download_unknown_genre)
+    val availableGenres = remember(downloadedItems, metadata, unknownGenre) {
+        downloadedItems.map { metadata[it.video.id]?.displayGenre ?: unknownGenre }.distinct().sorted()
     }
 
     val filteredDownloadedItems =
-        remember(downloadedItems, searchQuery, sort, metadata, selectedGenre) {
+        remember(downloadedItems, searchQuery, sort, metadata, selectedGenre, unknownGenre) {
             val filtered = downloadedItems.filter { item ->
                 val matchesGenre = selectedGenre == null ||
-                    (metadata[item.video.id]?.displayGenre ?: "未知类型") == selectedGenre
+                    (metadata[item.video.id]?.displayGenre ?: unknownGenre) == selectedGenre
                 if (!matchesGenre) return@filter false
                 if (searchQuery.isBlank()) return@filter true
                 val normalizedQuery = searchQuery.toSimplified()
@@ -176,6 +177,11 @@ fun DownloadScreen(
                 }
             }
         }
+
+    LaunchedEffect(downloadedNodes, viewMode, selectedGenre, searchQuery) {
+        val visibleIds = downloadedNodes.filterIsInstance<DownloadItemNode>().map { it.data.video.id }.toSet()
+        selectedVideoIds = selectedVideoIds.intersect(visibleIds)
+    }
 
     val uiState = DownloadUiState(
         downloadingItems = downloadingItems,
