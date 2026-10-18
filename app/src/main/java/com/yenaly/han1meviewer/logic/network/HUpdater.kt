@@ -162,8 +162,8 @@ object HUpdater {
         val ver = requestLatestRelease()
         if (!checkNeedUpdate(ver.tagName)) return null
         val asset = ver.assets.firstOrNull {
-            it.name.startsWith("Han1meViewer-") && it.name.endsWith("-arm64-v8a.apk", ignoreCase = true)
-        } ?: ver.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
+            it.name.startsWith("HANi-") && it.name.endsWith("-arm64-v8a.apk", ignoreCase = true)
+        }
         if (asset == null) {
             // Release 存在但没有上传安装包
             Log.w(TAG, "Release ${ver.tagName} 没有可下载的 APK")

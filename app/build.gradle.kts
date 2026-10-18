@@ -51,7 +51,7 @@ android {
 
 
     defaultConfig {
-        applicationId = "com.yenaly.han1meviewer"
+        applicationId = "com.kelaner.hani"
         minSdk = property("min.sdk")?.toString()?.toIntOrNull()
         targetSdk = property("target.sdk")?.toString()?.toIntOrNull()
         val (code, name) = createVersion(major = 1, minor = 1, patch = 0, revision = 1)
@@ -148,7 +148,7 @@ androidComponents {
         variant.outputs.forEach { output ->
 
             val abiSuffix = if (variant.buildType == "release") "-arm64-v8a" else ""
-            val apkName = "Han1meViewer-${output.versionName.get()}$abiSuffix.apk"
+            val apkName = "HANi-${output.versionName.get()}$abiSuffix.apk"
             (output as VariantOutputImpl).outputFileName = apkName
         }
     }

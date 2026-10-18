@@ -76,7 +76,7 @@ class MainActivity : FrameActivity(), PermissionRequester {
 
     companion object {
         private const val REQUEST_WRITE_EXTERNAL_STORAGE = 1234
-        const val ACTION_TOGGLE_PLAY = "com.yenaly.han1meviewer.ACTION_TOGGLE_PLAY"
+        const val ACTION_TOGGLE_PLAY = "${com.yenaly.han1meviewer.BuildConfig.APPLICATION_ID}.ACTION_TOGGLE_PLAY"
     }
 
     // 登錄完了後讓activity刷新主頁

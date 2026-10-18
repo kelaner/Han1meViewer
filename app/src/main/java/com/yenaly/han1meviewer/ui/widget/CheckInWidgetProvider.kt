@@ -23,7 +23,7 @@ import java.time.format.DateTimeFormatter
 class CheckInWidgetProvider : AppWidgetProvider() {
 
     companion object {
-        const val ACTION_CHECK_IN = "com.yenaly.han1meviewer.ACTION_WIDGET_CHECK_IN"
+        const val ACTION_CHECK_IN = "${com.yenaly.han1meviewer.BuildConfig.APPLICATION_ID}.ACTION_WIDGET_CHECK_IN"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
