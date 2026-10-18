@@ -298,12 +298,24 @@ fun DownloadScreen(
                     }
                     Box {
                         FilledIconButton(onClick = { viewMode = if (viewMode == DownloadedViewMode.GROUPS) DownloadedViewMode.ALL else DownloadedViewMode.GROUPS }) {
-                            Icon(painter = painterResource(R.drawable.baseline_format_list_bulleted_24), contentDescription = stringResource(if (viewMode == DownloadedViewMode.GROUPS) R.string.download_view_all else R.string.download_view_groups))
+                            Icon(
+                                painter = painterResource(
+                                    if (viewMode == DownloadedViewMode.GROUPS) R.drawable.baseline_grid_24
+                                    else R.drawable.baseline_format_list_bulleted_24
+                                ),
+                                contentDescription = stringResource(
+                                    if (viewMode == DownloadedViewMode.GROUPS) R.string.download_view_all
+                                    else R.string.download_view_groups
+                                ),
+                            )
                         }
                     }
                     Box {
                         FilledIconButton(onClick = { showGenreMenu = true }) {
-                            Text(stringResource(R.string.download_genre_filter))
+                            Icon(
+                                painter = painterResource(R.drawable.baseline_advanced_search_24),
+                                contentDescription = stringResource(R.string.download_genre_filter),
+                            )
                         }
                         DropdownMenu(expanded = showGenreMenu, onDismissRequest = { showGenreMenu = false }) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.download_all_genres)) }, onClick = { selectedGenre = null; showGenreMenu = false })
@@ -316,7 +328,7 @@ fun DownloadScreen(
                         onClick = { handleEvent(DownloadEvent.OnToggleMultiSelect) }
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.baseline_format_list_bulleted_24),
+                            painter = painterResource(R.drawable.baseline_edit_24),
                             contentDescription = stringResource(R.string.edit),
                         )
                     }

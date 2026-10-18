@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import com.yenaly.han1meviewer.ui.screen.rememberVideoGridColumns
+import com.yenaly.han1meviewer.ui.theme.SpacingNormal
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
@@ -117,18 +119,17 @@ fun DownloadedScreen(
     if (uiState.viewMode == DownloadedViewMode.ALL) {
         val videos = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>()
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(160.dp), modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            columns = GridCells.Fixed(rememberVideoGridColumns()), modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(SpacingNormal), horizontalArrangement = Arrangement.spacedBy(SpacingNormal),
+            verticalArrangement = Arrangement.spacedBy(SpacingNormal),
         ) {
             items(videos, key = { "all-${it.data.video.id}" }) { node ->
-                DownloadedVideoCard(
-                    item = node.data, metadata = uiState.metadata[node.data.video.id], compact = true,
+                DownloadedGridCard(
+                    item = node.data, metadata = uiState.metadata[node.data.video.id],
                     onOpenVideo = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnOpenDownloadedVideo(node.data)) },
                     onLocalPlayback = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnLocalPlayback(node.data)) },
                     onExternalPlayback = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnExternalPlayback(node.data)) },
                     onDeleteVideo = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnDeleteDownloadedVideo(node.data)) },
-                    onMoveGroup = { if (!uiState.multiSelectMode) pendingMoveVideo = node.data },
                     isMultiSelect = uiState.multiSelectMode, isSelected = node.data.video.id in uiState.selectedVideoIds,
                     onToggleSelect = { onEvent(DownloadEvent.OnToggleVideoSelection(node.data.video.id)) },
                 )
