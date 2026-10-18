@@ -146,6 +146,14 @@
     <string name="sort_by_date_descending">Sort by Date Descending</string>
     <string name="sort_by_alphabet_ascending">Sort by Alphabet Ascending</string>
     <string name="sort_by_alphabet_descending">Sort by Alphabet Descending</string>
+    <string name="sort_by_author_ascending">Sort by Author Ascending</string>
+    <string name="sort_by_author_descending">Sort by Author Descending</string>
+    <string name="download_view_groups">Group View</string>
+    <string name="download_view_all">All Videos</string>
+    <string name="download_genre_filter">Video Genre</string>
+    <string name="download_all_genres">All Genres</string>
+    <string name="download_unknown_genre">Unknown Genre</string>
+    <string name="download_unknown_author">Unknown Author</string>
     <string name="search_downloaded_hint">Search downloaded videos…</string>
     <string name="h_keyframe_settings">H Keyframe Settings</string>
     <string name="h_keyframes_enable">Enable H Keyframes!</string>

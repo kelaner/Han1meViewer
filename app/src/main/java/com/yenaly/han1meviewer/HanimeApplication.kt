@@ -19,6 +19,7 @@ import com.yenaly.han1meviewer.ui.viewmodel.AppViewModel
 import com.yenaly.han1meviewer.ui.activity.MainActivity
 import com.yenaly.han1meviewer.util.AnimeShaders
 import com.yenaly.han1meviewer.util.ThemeUtils
+import com.yenaly.han1meviewer.util.isFirebaseAvailable
 import com.developer.crashx.config.CrashConfig
 import com.yenaly.yenaly_libs.base.YenalyApplication
 import com.yenaly.yenaly_libs.utils.LanguageHelper
@@ -98,6 +99,10 @@ class HanimeApplication : YenalyApplication() {
     }
 
     private fun initFirebase() {
+        if (!isFirebaseAvailable()) {
+            AppViewModel.getLatestVersion(delayMillis = 200)
+            return
+        }
         // 用于处理 Firebase Analytics 初始化
         Firebase.analytics.setAnalyticsCollectionEnabled(Preferences.isAnalyticsEnabled)
         // 用于处理 Firebase Crashlytics 初始化

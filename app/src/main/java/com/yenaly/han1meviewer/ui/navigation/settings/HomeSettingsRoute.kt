@@ -10,7 +10,6 @@ import android.widget.TextView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -49,6 +48,7 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.core.text.parseAsHtml
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.yenaly.han1meviewer.util.isFirebaseAvailable
 import com.google.firebase.Firebase
 import com.google.firebase.analytics.analytics
 import com.yenaly.han1meviewer.BuildConfig
@@ -114,7 +114,6 @@ private const val HOME_HORIZONTAL_CARD_COUNT_MEDIUM = "horizontal_card_count_med
 private const val HOME_HORIZONTAL_CARD_COUNT_EXPANDED = "horizontal_card_count_expanded"
 
 @SuppressLint("LocalContextGetResourceValueCall")
-@RequiresApi(Build.VERSION_CODES.S)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeSettingsRouteScreen(
@@ -351,7 +350,7 @@ fun HomeSettingsRouteScreen(
             }
             saveBoolean(HOME_USE_ANALYTICS, true)
             refreshKey++
-            Firebase.analytics.setAnalyticsCollectionEnabled(true)
+            if (isFirebaseAvailable()) Firebase.analytics.setAnalyticsCollectionEnabled(true)
         },
         onUseLockScreenChange = { value ->
             if (value) {
@@ -498,7 +497,7 @@ fun HomeSettingsRouteScreen(
                 TextButton(onClick = {
                     saveBoolean(HOME_USE_ANALYTICS, false)
                     refreshKey++
-                    Firebase.analytics.setAnalyticsCollectionEnabled(false)
+                    if (isFirebaseAvailable()) Firebase.analytics.setAnalyticsCollectionEnabled(false)
                     showAnalyticsDialog = false
                 }) {
                     Text(stringResource(R.string.deny))
@@ -594,7 +593,11 @@ fun HomeSettingsRouteScreen(
                     showApplyDeepLinksDialog = false
                     try {
                         val intent = Intent().apply {
-                            action = Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS
+                            action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS
+                            } else {
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                            }
                             addCategory(Intent.CATEGORY_DEFAULT)
                             data = "package:${context.packageName}".toUri()
                             flags = Intent.FLAG_ACTIVITY_NO_HISTORY or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS

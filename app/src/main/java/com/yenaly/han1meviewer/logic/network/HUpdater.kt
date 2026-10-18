@@ -9,6 +9,7 @@ import com.yenaly.han1meviewer.Preferences
 import com.yenaly.han1meviewer.logic.exception.HUpdaterException
 import com.yenaly.han1meviewer.logic.model.github.CommitComparison
 import com.yenaly.han1meviewer.logic.model.github.Latest
+import com.yenaly.han1meviewer.util.isFirebaseAvailable
 import com.yenaly.han1meviewer.util.checkNeedUpdate
 import com.yenaly.han1meviewer.util.copyTo
 import com.yenaly.han1meviewer.util.runSuspendCatching
@@ -81,9 +82,11 @@ object HUpdater {
      */
     private fun currentChannel(): Channel {
         if (!Preferences.useCIUpdateChannel) return Channel.RELEASE
-        // Remote Config 未初始化完成时读取会抛异常，这里不再吞掉并回落到 Release，
-        // 而是作为一次明确的失败上报（界面提示具体原因，用户可手动重试）
-        val ciEnabled = try {
+        // 无 Firebase 配置时使用现有默认开关，仍保留用户选择的 CI 频道。
+        val ciEnabled = if (!isFirebaseAvailable()) {
+            Log.w(TAG, "Firebase 未配置，CI 更新使用本地默认开关")
+            FirebaseConstants.remoteConfigDefaults[FirebaseConstants.ENABLE_CI_UPDATE] as Boolean
+        } else try {
             Firebase.remoteConfig.getBoolean(FirebaseConstants.ENABLE_CI_UPDATE)
         } catch (e: Exception) {
             Log.w(TAG, "读取 Remote Config 的 ${FirebaseConstants.ENABLE_CI_UPDATE} 失败：${e.message}")
@@ -158,12 +161,14 @@ object HUpdater {
     private suspend fun checkReleaseChannel(): Latest? {
         val ver = requestLatestRelease()
         if (!checkNeedUpdate(ver.tagName)) return null
-        val asset = ver.assets.firstOrNull()
+        val asset = ver.assets.firstOrNull {
+            it.name.startsWith("Han1meViewer-") && it.name.endsWith("-arm64-v8a.apk", ignoreCase = true)
+        } ?: ver.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
         if (asset == null) {
             // Release 存在但没有上传安装包
-            Log.w(TAG, "Release ${ver.tagName} 没有任何可下载的 asset")
+            Log.w(TAG, "Release ${ver.tagName} 没有可下载的 APK")
             throw HUpdaterException.VersionCheck(
-                message = "Release ${ver.tagName} 没有任何可下载的 asset",
+                message = "Release ${ver.tagName} 没有可下载的 APK",
                 cause = null,
                 reason = HUpdaterException.VersionCheck.Reason.NO_RELEASE,
             )

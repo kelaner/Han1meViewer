@@ -12,8 +12,24 @@ import java.io.File
 val Context.updateFile: File get() = File(applicationContext.cacheDir, "update.apk")
 
 fun checkNeedUpdate(versionName: String): Boolean {
-    val latestVersionCode = versionName.substringAfter("+", "").toIntOrNull() ?: Int.MAX_VALUE
-    return BuildConfig.VERSION_CODE < latestVersionCode
+    // Older release tags encode the Android versionCode after '+'.
+    versionName.substringAfter("+", "").toIntOrNull()?.let { latestVersionCode ->
+        return BuildConfig.VERSION_CODE < latestVersionCode
+    }
+    fun String.versionParts(): List<Int>? {
+        return removePrefix("v").removePrefix("V")
+            .substringBefore("-").substringBefore("+").split('.').map { part ->
+                part.toIntOrNull() ?: return null
+            }
+    }
+
+    val latest = versionName.versionParts() ?: return false
+    val current = BuildConfig.VERSION_NAME.versionParts() ?: return false
+    for (index in 0 until maxOf(latest.size, current.size)) {
+        val comparison = (latest.getOrElse(index) { 0 }).compareTo(current.getOrElse(index) { 0 })
+        if (comparison != 0) return comparison > 0
+    }
+    return false
 }
 
 internal fun Context.getUpdateIfExists(latest: Latest): File? {

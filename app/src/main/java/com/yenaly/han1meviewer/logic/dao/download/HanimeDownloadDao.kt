@@ -85,6 +85,39 @@ abstract class HanimeDownloadDao {
     @Update(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun update(entity: HanimeDownloadEntity): Int
 
+    @Query("SELECT COUNT(*) FROM HanimeDownloadEntity WHERE videoCode = :videoCode " +
+            "AND (state != ${DownloadState.Mask.FINISHED} OR quality = :quality COLLATE NOCASE)")
+    abstract suspend fun countImportConflicts(videoCode: String, quality: String): Int
+
+    @Transaction
+    open suspend fun insertRestoredIfUnchanged(entity: HanimeDownloadEntity): Boolean {
+        if (countImportConflicts(entity.videoCode, entity.quality) > 0) return false
+        insert(entity)
+        return true
+    }
+
+    /** Restore local file fields only while the completed snapshot is still current. */
+    @Query(
+        "UPDATE HanimeDownloadEntity SET videoUri = :videoUri, coverUri = :coverUri, " +
+                "length = :length, downloadedLength = :length, author = :author, genre = :genre, metadataResolved = 1 " +
+                "WHERE id = :id AND videoUri = :previousUri AND state = ${DownloadState.Mask.FINISHED} " +
+                "AND author IS :previousAuthor AND genre IS :previousGenre AND metadataResolved = :previousResolved"
+    )
+    abstract suspend fun restoreCompletedFiles(
+        id: Int, previousUri: String, previousAuthor: String?, previousGenre: String?, previousResolved: Boolean,
+        videoUri: String, coverUri: String?, length: Long, author: String?, genre: String?,
+    ): Int
+
+    /** Update display fields only; never overwrite download progress or resurrect deleted tasks. */
+    @Query(
+        "UPDATE HanimeDownloadEntity SET author = :author, genre = :genre, metadataResolved = 1 " +
+                "WHERE id = :id AND videoUri = :videoUri AND state = ${DownloadState.Mask.FINISHED} " +
+                "AND (:force OR metadataResolved = 0)"
+    )
+    abstract suspend fun saveMetadata(
+        id: Int, videoUri: String, author: String?, genre: String?, force: Boolean = false,
+    ): Int
+
     @Query("SELECT * FROM HanimeDownloadEntity WHERE (`videoCode` = :videoCode AND `quality` = :quality) LIMIT 1")
     abstract suspend fun find(videoCode: String, quality: String): HanimeDownloadEntity?
 

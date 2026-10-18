@@ -102,6 +102,11 @@ object Preferences {
 
     // 設定 相關
 
+    var defaultDownloadView: String
+        get() = preferenceSp.getString("default_download_view", "LIST")
+            ?.takeIf { it == "LIST" || it == "GRID" } ?: "LIST"
+        set(value) = preferenceSp.edit { putString("default_download_view", value) }
+
     val switchPlayerKernel: String
         get() = preferenceSp.getString(
             SettingsPreferenceKeys.SWITCH_PLAYER_KERNEL,

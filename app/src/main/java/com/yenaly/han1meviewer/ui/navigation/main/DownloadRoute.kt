@@ -34,9 +34,11 @@ import com.yenaly.han1meviewer.ui.screen.home.DownloadScreen
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadEvent
 import com.yenaly.han1meviewer.ui.viewmodel.DownloadViewModel
 import com.yenaly.han1meviewer.util.SafFileManager
+import com.yenaly.han1meviewer.util.LocalDownloadUpdates
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
 import com.yenaly.han1meviewer.util.SafFileManager.ImportFailureReason
 import com.yenaly.han1meviewer.util.SafFileManager.ImportResult
-import com.yenaly.han1meviewer.util.SafFileManager.checkSafPermissions
 import com.yenaly.han1meviewer.util.SafFileManager.scanAndImportHanimeDownloads
 import com.yenaly.han1meviewer.util.openDownloadedHanimeVideoLocally
 import com.yenaly.han1meviewer.worker.HanimeDownloadManagerV2
@@ -84,8 +86,8 @@ fun DownloadRouteScreen(
             is DownloadEvent.OnDeleteDownloadingItem -> HanimeDownloadManagerV2.deleteTask(event.item)
 
             is DownloadEvent.OnImportDownloaded -> {
-                if (!Preferences.safDownloadPath.isNullOrBlank() &&
-                    !Preferences.isUsePrivateStorage && !isImportingDownloaded
+                if ((Preferences.isUsePrivateStorage || !Preferences.safDownloadPath.isNullOrBlank()) &&
+                    !isImportingDownloaded
                 ) {
                     showImportDownloadedConfirm = true
                 } else {
@@ -172,27 +174,43 @@ fun DownloadRouteScreen(
         dismissText = application.getString(R.string.cancel),
         onConfirm = {
             showImportDownloadedConfirm = false
+            if (!LocalDownloadUpdates.operationMutex.tryLock()) {
+                GlobalToasts.show("本地下载正在处理中，请稍后重试", level = GlobalToasts.ToastLevel.INFO)
+                return@ConfirmDialog
+            }
             isImportingDownloaded = true
             showImportProgress = true
             importProgress = 0
             importTotal = 0
             importCurrentName = null
             scope.launch {
-                val result = withContext(Dispatchers.IO) {
-                    try {
-                        if (!checkSafPermissions(context)) return@withContext null
-                        scanAndImportHanimeDownloads(context, dao) { imported, total, currentName ->
-                            importProgress = imported
-                            importTotal = total
-                            importCurrentName = currentName
-                        }
-                    } catch (e: Exception) {
-                        Log.e("ImportHanime", "Failed to import downloaded videos", e)
-                        null
+                val progress = Channel<Triple<Int, Int, String?>>(Channel.CONFLATED)
+                val progressJob = launch {
+                    for ((processed, total, name) in progress) {
+                        importProgress = processed
+                        importTotal = total
+                        importCurrentName = name
                     }
                 }
-                isImportingDownloaded = false
-                showImportProgress = false
+                val result = try {
+                    withContext(Dispatchers.IO) {
+                        scanAndImportHanimeDownloads(context, dao) { processed, total, name ->
+                            progress.trySend(Triple(processed, total, name))
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("ImportHanime", "Failed to import downloaded videos", e)
+                    null
+                } finally {
+                    progress.close()
+                    progressJob.cancel()
+                    isImportingDownloaded = false
+                    showImportProgress = false
+                    LocalDownloadUpdates.notifyChanged()
+                    LocalDownloadUpdates.operationMutex.unlock()
+                }
                 if (result == null) {
                     GlobalToasts.show(permissionError, level = GlobalToasts.ToastLevel.ERROR)
                 } else {
@@ -255,17 +273,19 @@ fun DownloadRouteScreen(
                     Text(stringResource(R.string.import_success_count, result?.successCount ?: 0))
                     if (result != null && result.failureCount > 0) {
                         Text(stringResource(R.string.import_fail_count, result.failureCount))
-                        for (failure in result.failures) {
+                        for (failure in result.failures.take(30)) {
                             val reasonText = when (failure.reason) {
                                 ImportFailureReason.INVALID_FOLDER_NAME ->
                                     stringResource(R.string.import_fail_reason_invalid_name)
                                 ImportFailureReason.MISSING_INFO_JSON ->
                                     stringResource(R.string.import_fail_reason_missing_info)
+                                ImportFailureReason.MISSING_OR_EMPTY_VIDEO -> "视频文件缺失或大小为 0，已跳过"
                                 ImportFailureReason.IMPORT_EXCEPTION ->
                                     stringResource(R.string.import_fail_reason_exception)
                             }
                             Text("• ${failure.name}（$reasonText）")
                         }
+                        if (result.failureCount > 30) Text("仅显示前 30 项失败记录，其余 ${result.failureCount - 30} 项已计入总数。")
                         Text(stringResource(R.string.import_fail_suggestion))
                     }
                 }

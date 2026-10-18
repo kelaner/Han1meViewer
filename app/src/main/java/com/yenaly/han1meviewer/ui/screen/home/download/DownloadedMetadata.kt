@@ -10,6 +10,6 @@ data class DownloadedMetadata(
 }
 
 enum class DownloadedViewMode {
-    GROUPS,
-    ALL,
+    LIST,
+    GRID,
 }

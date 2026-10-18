@@ -2,6 +2,8 @@ package com.yenaly.han1meviewer.ui.screen.home.download
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,11 +15,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import com.yenaly.han1meviewer.ui.screen.rememberVideoGridColumns
-import com.yenaly.han1meviewer.ui.theme.SpacingNormal
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
@@ -32,13 +33,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.yenaly.han1meviewer.R
@@ -52,6 +57,8 @@ import com.yenaly.han1meviewer.ui.component.lazy.LazyColumn
 import com.yenaly.han1meviewer.ui.preview.ComponentPreview
 import com.yenaly.han1meviewer.ui.preview.fakeDownloadedGroups
 import com.yenaly.han1meviewer.ui.preview.fakeDownloadedNodes
+import com.yenaly.han1meviewer.ui.screen.rememberVideoGridColumns
+import com.yenaly.han1meviewer.ui.theme.SpacingNormal
 
 /**
  * 已下载 Tab 页面（Content 层）。
@@ -109,156 +116,139 @@ fun DownloadedScreen(
         },
     )
 
-    if (uiState.downloadedNodes.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            EmptyContent(hint = stringResource(R.string.empty_content), subHint = stringResource(R.string.downloaded))
+    val videoNodes = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>()
+        .distinctBy { it.data.video.id }
+    val selectedVideos = videoNodes
+        .filter { it.data.video.id in uiState.selectedVideoIds }
+        .map { it.data }
+    var batchBarHeight by remember { mutableIntStateOf(0) }
+    val bottomPadding = with(LocalDensity.current) {
+        if (uiState.multiSelectMode) batchBarHeight.toDp() + 8.dp else 8.dp
+    }
+    val onRenameGroup: (DownloadHeaderNode) -> Unit = { header ->
+        if (header.groupId != DownloadGroupEntity.DEFAULT_GROUP_ID && !uiState.multiSelectMode) {
+            pendingRename = header
         }
-        return
     }
 
-    if (uiState.viewMode == DownloadedViewMode.ALL) {
-        val videos = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>()
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(rememberVideoGridColumns()), modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(SpacingNormal), horizontalArrangement = Arrangement.spacedBy(SpacingNormal),
-            verticalArrangement = Arrangement.spacedBy(SpacingNormal),
-        ) {
-            items(videos, key = { "all-${it.data.video.id}" }) { node ->
-                DownloadedGridCard(
-                    item = node.data, metadata = uiState.metadata[node.data.video.id],
-                    onOpenVideo = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnOpenDownloadedVideo(node.data)) },
-                    onLocalPlayback = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnLocalPlayback(node.data)) },
-                    onExternalPlayback = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnExternalPlayback(node.data)) },
-                    onDeleteVideo = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnDeleteDownloadedVideo(node.data)) },
-                    isMultiSelect = uiState.multiSelectMode, isSelected = node.data.video.id in uiState.selectedVideoIds,
-                    onToggleSelect = { onEvent(DownloadEvent.OnToggleVideoSelection(node.data.video.id)) },
-                )
-            }
-        }
-    } else {
-
     Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            state = listState,
-            contentPadding = PaddingValues(bottom = if (uiState.multiSelectMode) 72.dp else 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(uiState.downloadedNodes, key = {
-                when (it) {
-                    is DownloadHeaderNode -> "header-${it.groupId}"
-                    is DownloadItemNode -> "item-${it.parentKey}-${it.data.video.id}"
+        when {
+            uiState.downloadedNodes.isEmpty() -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(bottom = bottomPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    EmptyContent(
+                        hint = stringResource(R.string.empty_content),
+                        subHint = stringResource(R.string.downloaded),
+                    )
                 }
-            }) { node ->
-                when (node) {
-                    is DownloadHeaderNode -> {
-                        DownloadGroupHeader(
-                            header = node,
-                            onToggle = { onEvent(DownloadEvent.OnToggleGroup(node.groupId)) },
-                            onRename = {
-                                if (node.groupId == DownloadGroupEntity.DEFAULT_GROUP_ID) {
-                                    // 默认分组不可重命名
-                                } else if (!uiState.multiSelectMode) {
-                                    pendingRename = node
-                                }
-                            },
-                        )
-                    }
+            }
 
-                    is DownloadItemNode -> {
-                        val videoId = node.data.video.id
-                        val isSelected = videoId in uiState.selectedVideoIds
-                        DownloadedVideoCard(
-                            item = node.data,
-                            metadata = uiState.metadata[node.data.video.id],
-                            onOpenVideo = {
-                                if (!uiState.multiSelectMode) {
-                                    onEvent(DownloadEvent.OnOpenDownloadedVideo(node.data))
-                                }
-                            },
-                            onLocalPlayback = {
-                                if (!uiState.multiSelectMode) {
-                                    onEvent(DownloadEvent.OnLocalPlayback(node.data))
-                                }
-                            },
-                            onExternalPlayback = {
-                                if (!uiState.multiSelectMode) {
-                                    onEvent(DownloadEvent.OnExternalPlayback(node.data))
-                                }
-                            },
-                            onDeleteVideo = {
-                                if (!uiState.multiSelectMode) {
-                                    onEvent(DownloadEvent.OnDeleteDownloadedVideo(node.data))
-                                }
-                            },
-                            onMoveGroup = {
-                                if (!uiState.multiSelectMode) {
-                                    pendingMoveVideo = node.data
-                                }
-                            },
-                            isMultiSelect = uiState.multiSelectMode,
-                            isSelected = isSelected,
-                            onToggleSelect = {
-                                onEvent(DownloadEvent.OnToggleVideoSelection(videoId))
-                            },
-                        )
+            uiState.viewMode == DownloadedViewMode.GRID -> {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(rememberVideoGridColumns()),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = SpacingNormal, top = SpacingNormal,
+                        end = SpacingNormal, bottom = bottomPadding + SpacingNormal,
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(SpacingNormal),
+                    verticalArrangement = Arrangement.spacedBy(SpacingNormal),
+                ) {
+                    items(
+                        items = uiState.downloadedNodes,
+                        key = {
+                            when (it) {
+                                is DownloadHeaderNode -> "header-${it.groupId}"
+                                is DownloadItemNode -> "item-${it.parentKey}-${it.data.video.id}"
+                            }
+                        },
+                        span = { if (it is DownloadHeaderNode) GridItemSpan(maxLineSpan) else GridItemSpan(1) },
+                        contentType = { if (it is DownloadHeaderNode) "header" else "video" },
+                    ) { node ->
+                        when (node) {
+                            is DownloadHeaderNode -> DownloadGroupHeader(
+                                header = node,
+                                onToggle = { onEvent(DownloadEvent.OnToggleGroup(node.groupId)) },
+                                onRename = { onRenameGroup(node) },
+                            )
+
+                            is DownloadItemNode -> DownloadedGridCard(
+                                item = node.data,
+                                metadata = uiState.metadata[node.data.video.id],
+                                onOpenVideo = { onEvent(DownloadEvent.OnOpenDownloadedVideo(node.data)) },
+                                onLocalPlayback = { onEvent(DownloadEvent.OnLocalPlayback(node.data)) },
+                                onExternalPlayback = { onEvent(DownloadEvent.OnExternalPlayback(node.data)) },
+                                onDeleteVideo = { onEvent(DownloadEvent.OnDeleteDownloadedVideo(node.data)) },
+                                onMoveGroup = { pendingMoveVideo = node.data },
+                                isMultiSelect = uiState.multiSelectMode,
+                                isSelected = node.data.video.id in uiState.selectedVideoIds,
+                                onToggleSelect = { onEvent(DownloadEvent.OnToggleVideoSelection(node.data.video.id)) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = bottomPadding),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(uiState.downloadedNodes, key = {
+                        when (it) {
+                            is DownloadHeaderNode -> "header-${it.groupId}"
+                            is DownloadItemNode -> "item-${it.parentKey}-${it.data.video.id}"
+                        }
+                    }) { node ->
+                        when (node) {
+                            is DownloadHeaderNode -> DownloadGroupHeader(
+                                header = node,
+                                onToggle = { onEvent(DownloadEvent.OnToggleGroup(node.groupId)) },
+                                onRename = { onRenameGroup(node) },
+                            )
+
+                            is DownloadItemNode -> DownloadedVideoCard(
+                                item = node.data,
+                                metadata = uiState.metadata[node.data.video.id],
+                                onOpenVideo = { onEvent(DownloadEvent.OnOpenDownloadedVideo(node.data)) },
+                                onLocalPlayback = { onEvent(DownloadEvent.OnLocalPlayback(node.data)) },
+                                onExternalPlayback = { onEvent(DownloadEvent.OnExternalPlayback(node.data)) },
+                                onDeleteVideo = { onEvent(DownloadEvent.OnDeleteDownloadedVideo(node.data)) },
+                                onMoveGroup = { pendingMoveVideo = node.data },
+                                isMultiSelect = uiState.multiSelectMode,
+                                isSelected = node.data.video.id in uiState.selectedVideoIds,
+                                onToggleSelect = { onEvent(DownloadEvent.OnToggleVideoSelection(node.data.video.id)) },
+                            )
+                        }
                     }
                 }
             }
         }
 
         if (uiState.multiSelectMode) {
-            val selectedVideos = uiState.downloadedNodes
-                .filterIsInstance<DownloadItemNode>()
-                .filter { it.data.video.id in uiState.selectedVideoIds }
-                .map { it.data }
-
             BatchActionBar(
                 selectedCount = selectedVideos.size,
-                totalCount = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>().size,
+                totalCount = videoNodes.size,
                 onToggleSelectAll = {
-                    val nodes = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>()
-                    if (selectedVideos.size == nodes.size) {
-                        nodes.forEach { onEvent(DownloadEvent.OnToggleVideoSelection(it.data.video.id)) }
-                    } else {
-                        nodes.filter { it.data.video.id !in uiState.selectedVideoIds }
-                            .forEach { onEvent(DownloadEvent.OnToggleVideoSelection(it.data.video.id)) }
-                    }
+                    val allSelected = selectedVideos.size == videoNodes.size
+                    videoNodes.filter { allSelected || it.data.video.id !in uiState.selectedVideoIds }
+                        .forEach { onEvent(DownloadEvent.OnToggleVideoSelection(it.data.video.id)) }
                 },
                 onExitMultiSelect = { onEvent(DownloadEvent.OnToggleMultiSelect) },
                 onDeleteSelected = {
-                    if (selectedVideos.isNotEmpty()) {
-                        pendingBatchDeleteVideos = selectedVideos
-                    }
+                    if (selectedVideos.isNotEmpty()) pendingBatchDeleteVideos = selectedVideos
                 },
                 onMoveSelected = {
-                    if (selectedVideos.isNotEmpty()) {
-                        onEvent(DownloadEvent.OnBatchMoveRequest)
-                    }
+                    if (selectedVideos.isNotEmpty()) onEvent(DownloadEvent.OnBatchMoveRequest)
                 },
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .onSizeChanged { batchBarHeight = it.height },
             )
         }
-    }
-    }
-
-    if (uiState.viewMode == DownloadedViewMode.ALL && uiState.multiSelectMode) {
-        val selectedVideos = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>()
-            .filter { it.data.video.id in uiState.selectedVideoIds }.map { it.data }
-        BatchActionBar(
-            selectedCount = selectedVideos.size,
-            totalCount = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>().size,
-            onToggleSelectAll = {
-                val nodes = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>()
-                if (selectedVideos.size == nodes.size) nodes.forEach { onEvent(DownloadEvent.OnToggleVideoSelection(it.data.video.id)) }
-                else nodes.filter { it.data.video.id !in uiState.selectedVideoIds }
-                    .forEach { onEvent(DownloadEvent.OnToggleVideoSelection(it.data.video.id)) }
-            },
-            onExitMultiSelect = { onEvent(DownloadEvent.OnToggleMultiSelect) },
-            onDeleteSelected = { if (selectedVideos.isNotEmpty()) pendingBatchDeleteVideos = selectedVideos },
-            onMoveSelected = { if (selectedVideos.isNotEmpty()) onEvent(DownloadEvent.OnBatchMoveRequest) },
-            modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
-        )
     }
 
     pendingBatchDeleteVideos?.let { videos ->
@@ -287,7 +277,7 @@ private fun BatchActionBar(
     onMoveSelected: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isAllSelected = selectedCount == totalCount
+    val isAllSelected = totalCount > 0 && selectedCount == totalCount
     val hasSelection = selectedCount > 0
 
     Surface(
@@ -298,14 +288,13 @@ private fun BatchActionBar(
         shadowElevation = 12.dp,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 8.dp, end = 8.dp, top = 10.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 8.dp),
         ) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -321,14 +310,11 @@ private fun BatchActionBar(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-            }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = onToggleSelectAll) {
+                TextButton(onClick = onToggleSelectAll, enabled = totalCount > 0) {
                     Text(
                         text = if (isAllSelected) {
                             stringResource(R.string.deselect_all)
@@ -338,7 +324,12 @@ private fun BatchActionBar(
                         style = MaterialTheme.typography.labelLarge
                     )
                 }
+            }
 
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
                 TextButton(
                     onClick = onMoveSelected,
                     enabled = hasSelection,
@@ -406,6 +397,7 @@ private fun DownloadedScreenEmptyPreview() {
             uiState = DownloadUiState(
                 downloadedNodes = emptyList(),
                 displayGroups = emptyList(),
+                multiSelectMode = true,
             ),
             listState = rememberLazyListState(),
             onEvent = {},
@@ -413,7 +405,26 @@ private fun DownloadedScreenEmptyPreview() {
     }
 }
 
-@Preview(showBackground = true, widthDp = 420, heightDp = 900)
+@Preview(showBackground = true, widthDp = 320, heightDp = 900)
+@Composable
+private fun DownloadedGridMultiSelectPreview() {
+    ComponentPreview {
+        DownloadedScreen(
+            uiState = DownloadUiState(
+                downloadedNodes = fakeDownloadedNodes,
+                displayGroups = fakeDownloadedGroups,
+                viewMode = DownloadedViewMode.GRID,
+                multiSelectMode = true,
+                selectedVideoIds = fakeDownloadedNodes.filterIsInstance<DownloadItemNode>()
+                    .take(1).map { it.data.video.id }.toSet(),
+            ),
+            listState = rememberLazyListState(),
+            onEvent = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 320)
 @Composable
 private fun BatchActionBarPreview() {
     ComponentPreview {

@@ -3,7 +3,8 @@ package com.yenaly.han1meviewer.ui.screen.home
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.layout.Box
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,8 +13,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,13 +30,14 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yenaly.han1meviewer.R
+import com.yenaly.han1meviewer.Preferences
+import com.yenaly.han1meviewer.ui.screen.home.download.DownloadToolbar
 import com.yenaly.han1meviewer.logic.entity.download.DownloadGroupEntity
 import com.yenaly.han1meviewer.logic.entity.download.HanimeDownloadEntity
 import com.yenaly.han1meviewer.logic.entity.download.VideoWithCategories
@@ -111,17 +111,12 @@ fun DownloadScreen(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var sort by rememberSaveable { mutableStateOf(DownloadSort.DATE_DESC) }
     var showSearchBar by rememberSaveable { mutableStateOf(false) }
-    var showSortMenu by remember { mutableStateOf(false) }
-    var showGenreMenu by remember { mutableStateOf(false) }
-    var viewMode by rememberSaveable { mutableStateOf(DownloadedViewMode.GROUPS) }
+    var viewMode by rememberSaveable { mutableStateOf(DownloadedViewMode.valueOf(Preferences.defaultDownloadView)) }
+    var grouped by rememberSaveable { mutableStateOf(true) }
     var selectedGenre by rememberSaveable { mutableStateOf<String?>(null) }
-    var metadata by remember { mutableStateOf<Map<Int, DownloadedMetadata>>(emptyMap()) }
-    val context = LocalContext.current
-
-    LaunchedEffect(downloadedItems.map { it.video.id to it.video.videoCode }) {
-        val loaded = loadDownloadedMetadata(context, downloadedItems.map { it.video.videoCode })
-        metadata = downloadedItems.associate { item ->
-            item.video.id to (loaded[item.video.videoCode] ?: DownloadedMetadata())
+    val metadata = remember(downloadedItems) {
+        downloadedItems.associate { item ->
+            item.video.id to DownloadedMetadata(item.video.author, item.video.genre)
         }
     }
 
@@ -146,10 +141,10 @@ fun DownloadScreen(
         }
 
     val downloadedNodes =
-        remember(filteredDownloadedItems, displayGroups, collapseDownloadedGroup, downloadedHeaderNodes, downloadedGroupExpandedState, searchQuery, viewMode) {
+        remember(filteredDownloadedItems, displayGroups, collapseDownloadedGroup, downloadedHeaderNodes, downloadedGroupExpandedState, searchQuery, grouped) {
             val groupIdToNameMap = displayGroups.associate { it.id to it.name }
             when {
-                viewMode == DownloadedViewMode.ALL -> {
+                !grouped -> {
                     downloadedHeaderNodes = emptyList()
                     filteredDownloadedItems.map { DownloadItemNode(it, it.video.groupId) }
                 }
@@ -178,7 +173,7 @@ fun DownloadScreen(
             }
         }
 
-    LaunchedEffect(downloadedNodes, viewMode, selectedGenre, searchQuery) {
+    LaunchedEffect(downloadedNodes, selectedGenre, searchQuery) {
         val visibleIds = downloadedNodes.filterIsInstance<DownloadItemNode>().map { it.data.video.id }.toSet()
         selectedVideoIds = selectedVideoIds.intersect(visibleIds)
     }
@@ -192,6 +187,7 @@ fun DownloadScreen(
         multiSelectMode = multiSelectMode,
         selectedVideoIds = selectedVideoIds,
         viewMode = viewMode,
+        grouped = grouped,
         metadata = metadata,
         selectedGenre = selectedGenre,
     )
@@ -245,9 +241,20 @@ fun DownloadScreen(
         onLoadDownloaded()
     }
 
+    BackHandler(enabled = multiSelectMode) {
+        multiSelectMode = false
+        selectedVideoIds = emptySet()
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
     HanimeScaffold(
         title = stringResource(R.string.download),
-        onBack = onBack,
+        onBack = {
+            if (multiSelectMode) {
+                multiSelectMode = false
+                selectedVideoIds = emptySet()
+            } else onBack()
+        },
         actions = {
             if (uiState.currentPage == 0) {
                 FilledIconButton(
@@ -269,92 +276,21 @@ fun DownloadScreen(
                     )
                 }
             } else {
-                if (!uiState.multiSelectMode) {
-                    FilledIconButton(
-                        onClick = { showSearchBar = !showSearchBar }
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_baseline_search_24),
-                            contentDescription = stringResource(R.string.search),
-                        )
-                    }
-                    Box {
-                        FilledIconButton(
-                            onClick = { showSortMenu = true }
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.baseline_sort_24),
-                                contentDescription = stringResource(R.string.sort_option),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showSortMenu,
-                            onDismissRequest = { showSortMenu = false },
-                        ) {
-                            DownloadSort.entries.forEach { option ->
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(option.labelRes)) },
-                                    onClick = {
-                                        sort = option
-                                        showSortMenu = false
-                                    },
-                                )
-                            }
-                        }
-                    }
-                    Box {
-                        FilledIconButton(onClick = { viewMode = if (viewMode == DownloadedViewMode.GROUPS) DownloadedViewMode.ALL else DownloadedViewMode.GROUPS }) {
-                            Icon(
-                                painter = painterResource(
-                                    if (viewMode == DownloadedViewMode.GROUPS) R.drawable.baseline_grid_24
-                                    else R.drawable.baseline_format_list_bulleted_24
-                                ),
-                                contentDescription = stringResource(
-                                    if (viewMode == DownloadedViewMode.GROUPS) R.string.download_view_all
-                                    else R.string.download_view_groups
-                                ),
-                            )
-                        }
-                    }
-                    Box {
-                        FilledIconButton(onClick = { showGenreMenu = true }) {
-                            Icon(
-                                painter = painterResource(R.drawable.baseline_advanced_search_24),
-                                contentDescription = stringResource(R.string.download_genre_filter),
-                            )
-                        }
-                        DropdownMenu(expanded = showGenreMenu, onDismissRequest = { showGenreMenu = false }) {
-                            DropdownMenuItem(text = { Text(stringResource(R.string.download_all_genres)) }, onClick = { selectedGenre = null; showGenreMenu = false })
-                            availableGenres.forEach { genre ->
-                                DropdownMenuItem(text = { Text(genre) }, onClick = { selectedGenre = genre; showGenreMenu = false })
-                            }
-                        }
-                    }
-                    FilledIconButton(
-                        onClick = { handleEvent(DownloadEvent.OnToggleMultiSelect) }
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.baseline_edit_24),
-                            contentDescription = stringResource(R.string.edit),
-                        )
-                    }
-                    FilledIconButton(
-                        onClick = { handleEvent(DownloadEvent.OnCreateGroupDialogChange(true)) }
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.baseline_add_24),
-                            contentDescription = stringResource(R.string.create_new_group),
-                        )
-                    }
-                    FilledIconButton(
-                        onClick = { handleEvent(DownloadEvent.OnImportDownloaded) }
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_baseline_download_24),
-                            contentDescription = stringResource(R.string.read_download_dir_title),
-                        )
-                    }
-                }
+                DownloadToolbar(
+                    width = maxWidth,
+                    viewMode = viewMode,
+                    grouped = grouped,
+                    multiSelectMode = multiSelectMode,
+                    genres = availableGenres,
+                    onToggleView = { viewMode = if (viewMode == DownloadedViewMode.LIST) DownloadedViewMode.GRID else DownloadedViewMode.LIST },
+                    onSort = { sort = it },
+                    onGenre = { selectedGenre = it },
+                    onToggleGrouping = { grouped = !grouped },
+                    onToggleMultiSelect = { handleEvent(DownloadEvent.OnToggleMultiSelect) },
+                    onSearch = { showSearchBar = !showSearchBar },
+                    onCreateGroup = { handleEvent(DownloadEvent.OnCreateGroupDialogChange(true)) },
+                    onReadDirectory = { handleEvent(DownloadEvent.OnImportDownloaded) },
+                )
             }
         },
     ) { paddingValues ->
@@ -425,6 +361,8 @@ fun DownloadScreen(
             }
         }
     }
+
+    } // BoxWithConstraints
 
     if (pendingBatchMove) {
         val selectedVideos = downloadedNodes

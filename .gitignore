@@ -37,6 +37,10 @@ gradle-app.setting
 # 系统文件
 Thumbs.db
 
+# 本地下载产物、验证工具及临时设备数据
+/artifacts/tooling/
+/artifacts/device-validation/
+
 # 日志和临时文件
 *.log
 *.tmp

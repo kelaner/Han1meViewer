@@ -5,6 +5,8 @@ import Config.Version.source
 import Config.isRelease
 import Config.lastCommitSha
 import com.android.build.api.variant.impl.VariantOutputImpl
+import com.google.gms.googleservices.GoogleServicesPlugin
+import com.google.gms.googleservices.GoogleServicesTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -19,6 +21,21 @@ plugins {
     alias(libs.plugins.navigation.safeargs)
     id("com.mikepenz.aboutlibraries.plugin") version "14.2.1"
     id("com.github.ben-manes.versions") version "0.54.0"
+}
+
+googleServices {
+    // Missing configuration is supported locally; malformed configuration still fails validation.
+    missingGoogleServicesStrategy = GoogleServicesPlugin.MissingGoogleServicesStrategy.WARN
+}
+
+tasks.configureEach {
+    if (name.startsWith("uploadCrashlyticsMappingFile")) {
+        val variantName = name.removePrefix("uploadCrashlyticsMappingFile")
+        onlyIf("Firebase configuration exists for this variant") {
+            tasks.named<GoogleServicesTask>("process${variantName}GoogleServices").get()
+                .googleServicesJsonFiles.get().any { it.isFile }
+        }
+    }
 }
 
 android {
@@ -37,7 +54,7 @@ android {
         applicationId = "com.yenaly.han1meviewer"
         minSdk = property("min.sdk")?.toString()?.toIntOrNull()
         targetSdk = property("target.sdk")?.toString()?.toIntOrNull()
-        val (code, name) = createVersion(major = 1, minor = 1, patch = 0)
+        val (code, name) = createVersion(major = 1, minor = 1, patch = 0, revision = 1)
         versionCode = code
         versionName = name
 
@@ -53,10 +70,11 @@ android {
     }
     signingConfigs {
         create("release") {
-            storeFile = file(System.getenv("HOME") + "/.android/keystore.jks")
+            storeFile = file(System.getenv("KEYSTORE_FILE")
+                ?: "${System.getProperty("user.home")}/.android/keystore.jks")
             storePassword = System.getenv("KEYSTORE_PASSWORD")
             keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEYSTORE_PASSWORD")
+            keyPassword = System.getenv("KEY_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD")
         }
     }
 
@@ -67,6 +85,11 @@ android {
             include("arm64-v8a")
             isUniversalApk = false
         }
+    }
+
+    // Compress native libraries without dropping the mpv player or its bundled dependencies.
+    packaging {
+        jniLibs.useLegacyPackaging = true
     }
 
     buildTypes {
@@ -124,8 +147,8 @@ androidComponents {
     onVariants { variant ->
         variant.outputs.forEach { output ->
 
-            //  val apkName = "你的应用名_V${output.versionName.get()}_Build${output.versionCode.get()}_${variant.buildType}.apk"
-            val apkName = "Han1meViewer-v${output.versionName.get()}.apk"
+            val abiSuffix = if (variant.buildType == "release") "-arm64-v8a" else ""
+            val apkName = "Han1meViewer-${output.versionName.get()}$abiSuffix.apk"
             (output as VariantOutputImpl).outputFileName = apkName
         }
     }

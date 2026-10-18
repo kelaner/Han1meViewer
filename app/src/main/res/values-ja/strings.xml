@@ -146,6 +146,14 @@
     <string name="sort_by_date_descending">日付順（新しい順）</string>
     <string name="sort_by_alphabet_ascending">アルファベット順（A-Z）</string>
     <string name="sort_by_alphabet_descending">アルファベット順（Z-A）</string>
+    <string name="sort_by_author_ascending">作者順（昇順）</string>
+    <string name="sort_by_author_descending">作者順（降順）</string>
+    <string name="download_view_groups">グループ表示</string>
+    <string name="download_view_all">すべての動画</string>
+    <string name="download_genre_filter">作品のジャンル</string>
+    <string name="download_all_genres">すべてのジャンル</string>
+    <string name="download_unknown_genre">ジャンル不明</string>
+    <string name="download_unknown_author">作者不明</string>
     <string name="search_downloaded_hint">ダウンロード済みを検索…</string>
     <string name="h_keyframe_settings">キーHフレーム設定</string>
     <string name="h_keyframes_enable">キーHフレームを有効化</string>

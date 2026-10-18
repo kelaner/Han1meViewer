@@ -3,11 +3,17 @@ package com.yenaly.han1meviewer.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.viewModelScope
 import com.yenaly.han1meviewer.logic.DatabaseRepo
+import com.yenaly.han1meviewer.logic.dao.DownloadDatabase
 import com.yenaly.han1meviewer.logic.entity.download.DownloadGroupEntity
 import com.yenaly.han1meviewer.logic.entity.download.HanimeDownloadEntity
 import com.yenaly.han1meviewer.logic.entity.download.VideoWithCategories
+import com.yenaly.han1meviewer.ui.screen.home.loadDownloadedMetadata
+import com.yenaly.han1meviewer.ui.screen.home.download.DownloadedMetadata
+import com.yenaly.han1meviewer.util.LocalDownloadUpdates
 import com.yenaly.yenaly_libs.base.YenalyViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +22,9 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * @project Han1meViewer
@@ -29,6 +38,44 @@ class DownloadViewModel(application: Application) : YenalyViewModel(application)
 
     private val _downloaded = MutableStateFlow(mutableListOf<VideoWithCategories>())
     val downloaded = _downloaded.asStateFlow()
+    private var downloadedJob: Job? = null
+    private val metadataMutex = Mutex()
+    private var observedLocalRevision = LocalDownloadUpdates.changes.value
+
+    init {
+        viewModelScope.launch {
+            LocalDownloadUpdates.changes.collect { revision ->
+                if (revision != observedLocalRevision) {
+                    observedLocalRevision = revision
+                    try {
+                        resolveDownloadedMetadata(force = true)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        }
+    }
+
+    /** Only completed records are eligible. A missing artist is still a resolved unknown. */
+    private suspend fun resolveDownloadedMetadata(force: Boolean = false) = withContext(Dispatchers.IO) {
+        metadataMutex.withLock {
+            val dao = DownloadDatabase.instance.hanimeDownloadDao
+            val records = dao.getAll().filter { it.isDownloaded && (force || !it.metadataResolved) }
+            if (records.isEmpty()) return@withLock
+            // Different qualities may live under different download roots after moving storage.
+            for ((location, locatedRecords) in records.groupBy { it.videoCode to it.videoUri }) {
+                val (code, uri) = location
+                val parsed = loadDownloadedMetadata(application, listOf(code), mapOf(code to uri))[code]
+                for (record in locatedRecords) {
+                    val value = parsed ?: DownloadedMetadata(record.author, record.genre)
+                    dao.saveMetadata(record.id, record.videoUri, value.author, value.genre, force)
+                }
+            }
+        }
+    }
 
     /**
      * 下载分组列表的状态流
@@ -58,12 +105,25 @@ class DownloadViewModel(application: Application) : YenalyViewModel(application)
         sortedBy: HanimeDownloadEntity.SortedBy = HanimeDownloadEntity.SortedBy.ID,
         ascending: Boolean = false,
     ) {
-        viewModelScope.launch {
+        downloadedJob?.cancel()
+        downloadedJob = viewModelScope.launch {
             DatabaseRepo.HanimeDownload.loadAllDownloadedHanime(sortedBy, ascending)
                 .catch { e -> e.printStackTrace() }
                 .flowOn(Dispatchers.IO)
                 .collect {
-                    _downloaded.value = it
+                    if (it.any { row -> !row.video.metadataResolved }) {
+                        try {
+                            resolveDownloadedMetadata()
+                            // Room emits the updated snapshot; do not flash legacy unknown fields first.
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            _downloaded.value = it
+                        }
+                    } else {
+                        _downloaded.value = it
+                    }
                 }
         }
     }

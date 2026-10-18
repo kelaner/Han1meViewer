@@ -13,6 +13,8 @@ import com.yenaly.han1meviewer.logic.model.DownloadedNode
  * @param displayGroups 用于 UI 展示的分组列表（默认分组名已替换）
  * @param currentPage 当前选中的 Tab 索引 (0=下载中, 1=已下载)
  * @param showCreateGroupDialog 是否显示新建分组对话框
+ * @param viewMode 已下载内容的列表或网格布局
+ * @param grouped 是否按分组展示，独立于布局模式
  */
 data class DownloadUiState(
     val downloadingItems: List<HanimeDownloadEntity> = emptyList(),
@@ -22,7 +24,8 @@ data class DownloadUiState(
     val showCreateGroupDialog: Boolean = false,
     val multiSelectMode: Boolean = false,
     val selectedVideoIds: Set<Int> = emptySet(),
-    val viewMode: DownloadedViewMode = DownloadedViewMode.GROUPS,
+    val viewMode: DownloadedViewMode = DownloadedViewMode.LIST,
+    val grouped: Boolean = true,
     val metadata: Map<Int, DownloadedMetadata> = emptyMap(),
     val selectedGenre: String? = null,
 )

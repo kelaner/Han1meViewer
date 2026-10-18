@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.content.edit
 import androidx.core.net.toUri
@@ -16,17 +17,17 @@ import com.yenaly.han1meviewer.HFileManager.getAppDownloadFolder
 import com.yenaly.han1meviewer.HFileManager.getDownloadVideoCoverFile
 import com.yenaly.han1meviewer.Preferences
 import com.yenaly.han1meviewer.logic.dao.download.HanimeDownloadDao
-import com.yenaly.han1meviewer.logic.entity.download.HanimeDownloadEntity
-import com.yenaly.han1meviewer.logic.state.DownloadState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
+import java.io.IOException
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.coroutineContext
 
 /**
  * SAF (Storage Access Framework)
@@ -52,7 +53,6 @@ object SafFileManager {
 
     const val KEY_TREE_URI = "saf_download_path"
     private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "flv", "mov", "webm")
-    private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp")
 
     private fun isSafReady(): Boolean = !Preferences.safDownloadPath.isNullOrBlank()
     fun buildOpenDirectoryIntent(): Intent {
@@ -374,6 +374,7 @@ object SafFileManager {
     enum class ImportFailureReason {
         INVALID_FOLDER_NAME,
         MISSING_INFO_JSON,
+        MISSING_OR_EMPTY_VIDEO,
         IMPORT_EXCEPTION,
     }
 
@@ -385,6 +386,7 @@ object SafFileManager {
     data class ImportResult(
         val successCount: Int = 0,
         val failures: List<ImportFailure> = emptyList(),
+        val skippedCount: Int = 0,
     ) {
         val failureCount get() = failures.size
     }
@@ -397,115 +399,116 @@ object SafFileManager {
     suspend fun scanAndImportHanimeDownloads(
         context: Context,
         dao: HanimeDownloadDao,
+        onItemProgress: (suspend (completed: Int, total: Int, failed: Int, skipped: Int, currentName: String?) -> Unit)? = null,
         onProgress: ((imported: Int, total: Int, currentName: String?) -> Unit)? = null,
-    ): ImportResult {
-        val treeUri = Preferences.safDownloadPath?.toUri() ?: return ImportResult()
-        val rootDocFile = DocumentFile.fromTreeUri(context, treeUri) ?: return ImportResult()
-        val hanimeDownloadDoc = rootDocFile.findFile(HANIME_DOWNLOAD_FOLDER) ?: return ImportResult()
+    ): ImportResult = withContext(Dispatchers.IO) {
+        coroutineContext.ensureActive()
+        val rootEntry: LocalDownloadEntry = if (Preferences.isUsePrivateStorage) {
+            val folder = File(getAppDownloadFolder(context), HANIME_DOWNLOAD_FOLDER)
+            if (!folder.exists()) return@withContext ImportResult()
+            PrivateDownloadEntry(folder, coroutineContext)
+        } else {
+            val treeUri = Preferences.safDownloadPath?.takeIf { it.isNotBlank() }?.toUri()
+                ?: throw IOException("请先授权下载目录")
+            val tree = DocumentFile.fromTreeUri(context, treeUri)
+                ?: throw IOException("下载目录授权无效")
+            // Query the root with the same strict snapshot reader; findFile swallows provider failures.
+            val root = SafDownloadEntry(context, tree.uri, null, true, false, 0L, coroutineContext)
+            root.listFiles().firstOrNull { it.isDirectory && it.name == HANIME_DOWNLOAD_FOLDER }
+                ?: return@withContext ImportResult()
+        }
+        importLocalDownloadFolders(
+            folders = rootEntry.listFiles().filter { it.isDirectory },
+            existingDownloads = dao.getAll(),
+            insert = { error("Restore must use a guarded insert") },
+            update = { error("Restore must use a guarded update") },
+            insertIfUnchanged = { dao.insertRestoredIfUnchanged(it) },
+            updateIfUnchanged = { restored, previous ->
+                dao.restoreCompletedFiles(
+                    id = previous.id, previousUri = previous.videoUri,
+                    previousAuthor = previous.author, previousGenre = previous.genre,
+                    previousResolved = previous.metadataResolved,
+                    videoUri = restored.videoUri, coverUri = restored.coverUri,
+                    length = restored.length, author = restored.author, genre = restored.genre,
+                ) > 0
+            },
+            onItemProgress = onItemProgress,
+            onProgress = onProgress,
+        )
+    }
 
-        val folders = hanimeDownloadDoc.listFiles().filter { it.isDirectory }
-        val total = folders.size
-        val failures = mutableListOf<ImportFailure>()
-        var successCount = 0
+    private class PrivateDownloadEntry(
+        private val file: File,
+        private val scanContext: CoroutineContext,
+    ) : LocalDownloadEntry {
+        override val name = file.name
+        override val uri = file.toUri().toString()
+        override val isDirectory = file.isDirectory
+        override val isFile = file.isFile
+        override val length = file.length()
 
-        folders.forEachIndexed { index, folderDoc ->
-            var currentName: String? = folderDoc.name
-            var failure: ImportFailure? = null
-            try {
-                val videoCode = folderDoc.name
-                if (videoCode.isNullOrBlank()) {
-                    failure = ImportFailure(
-                        folderDoc.uri?.lastPathSegment ?: "?",
-                        ImportFailureReason.INVALID_FOLDER_NAME,
-                    )
-                } else {
-                    try {
-                        val infoFile = folderDoc.findFile("info.json")
-                        if (infoFile == null) {
-                            failure = ImportFailure(videoCode, ImportFailureReason.MISSING_INFO_JSON)
-                        } else {
-                            val inputStream = context.contentResolver.openInputStream(infoFile.uri)
-                            if (inputStream == null) {
-                                failure = ImportFailure(videoCode, ImportFailureReason.MISSING_INFO_JSON)
-                            } else {
-                                inputStream.use { input ->
-                                    val json = input.bufferedReader().use { it.readText() }
-                                    val jsonObj =
-                                        kotlinx.serialization.json.Json.parseToJsonElement(json).jsonObject
-
-                                    val title = jsonObj["title"]?.jsonPrimitive?.content ?: ""
-                                    val coverUrl = jsonObj["coverUrl"]?.jsonPrimitive?.content ?: ""
-                                    val addDate = System.currentTimeMillis()
-                                    val videoUrls = jsonObj["videoUrls"]?.jsonObject
-
-                                    // 获取视频文件的 DocumentFile
-                                    val videoFile = folderDoc.listFiles()
-                                        .firstOrNull { file ->
-                                            file.isFile && file.name?.substringAfterLast('.', "")
-                                                ?.lowercase() in VIDEO_EXTENSIONS
-                                        }
-                                    val pattern = """_(\d+P)\.mp4$""".toRegex()
-                                    val quality = pattern.find(videoFile?.name.toString())?.groupValues?.get(1)
-                                        ?: "unknow"
-                                    val videoUrl = videoUrls?.get(quality)
-                                        ?.jsonObject
-                                        ?.get("link")
-                                        ?.jsonPrimitive
-                                        ?.content
-
-                                    // 获取封面文件的 DocumentFile
-                                    val coverFile = folderDoc.listFiles()
-                                        .firstOrNull { file ->
-                                            file.isFile && file.name?.substringAfterLast('.', "")
-                                                ?.lowercase() in IMAGE_EXTENSIONS
-                                        }
-
-                                    val videoUri = videoFile?.uri?.toString() ?: ""
-                                    val coverUri = coverFile?.uri?.toString()
-                                    val videoLength = videoFile?.length() ?: 0L
-                                    currentName = videoFile?.name ?: videoCode
-                                    val existing = dao.find(videoCode)
-                                    if (existing != null) {
-                                        val updated = existing.copy(
-                                            videoUri = videoUri,
-                                            coverUri = coverUri,
-                                            length = videoLength,
-                                            //                               quality = quality
-                                        )
-                                        dao.update(updated)
-                                        Log.d("ImportHanime", "已存在，更新 videoUri/coverUri: $videoCode, length:$videoLength")
-                                    } else {
-                                        val entity = HanimeDownloadEntity(
-                                            coverUrl = coverUrl,
-                                            coverUri = coverUri,
-                                            title = title,
-                                            addDate = addDate,
-                                            videoCode = videoCode,
-                                            videoUri = videoUri,
-                                            quality = quality,
-                                            videoUrl = videoUrl.toString(),
-                                            length = videoLength,
-                                            downloadedLength = 0L,
-                                            state = DownloadState.Finished
-                                        )
-                                        dao.insert(entity)
-                                        Log.d("ImportHanime", "导入完成: $videoCode, length:$videoLength")
-                                    }
-                                    successCount++
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        failure = ImportFailure(videoCode, ImportFailureReason.IMPORT_EXCEPTION)
-                        Log.e("ImportHanime", "导入失败: $videoCode", e)
-                    }
-                }
-            } finally {
-                failure?.let { failures.add(it) }
-                onProgress?.invoke(index + 1, total, currentName)
+        override fun listFiles(): List<LocalDownloadEntry> {
+            val files = file.listFiles() ?: throw IOException("无法读取下载目录")
+            return files.map {
+                scanContext.ensureActive()
+                PrivateDownloadEntry(it, scanContext)
             }
         }
-        return ImportResult(successCount, failures)
+
+        override fun openInputStream() = file.inputStream()
+    }
+
+    /** All child properties come from one cursor, never from per-property provider queries. */
+    private class SafDownloadEntry(
+        private val context: Context,
+        private val documentUri: Uri,
+        override val name: String?,
+        override val isDirectory: Boolean,
+        override val isFile: Boolean,
+        override val length: Long,
+        private val scanContext: CoroutineContext,
+    ) : LocalDownloadEntry {
+        override val uri = documentUri.toString()
+
+        override fun listFiles(): List<LocalDownloadEntry> {
+            scanContext.ensureActive()
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                documentUri, DocumentsContract.getDocumentId(documentUri),
+            )
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE,
+            )
+            val cursor = context.contentResolver.query(childrenUri, projection, null, null, null)
+                ?: throw IOException("无法读取已授权的下载目录")
+            return cursor.use {
+                val idIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val sizeIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE)
+                val entries = mutableListOf<LocalDownloadEntry>()
+                while (it.moveToNext()) {
+                    scanContext.ensureActive()
+                    val id = it.getString(idIndex) ?: throw IOException("下载目录条目缺少 documentId")
+                    val mime = it.getString(mimeIndex)
+                    val directory = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    entries += SafDownloadEntry(
+                        context = context,
+                        documentUri = DocumentsContract.buildDocumentUriUsingTree(documentUri, id),
+                        name = it.getString(nameIndex),
+                        isDirectory = directory,
+                        isFile = mime != null && !directory,
+                        length = if (it.isNull(sizeIndex)) 0L else it.getLong(sizeIndex),
+                        scanContext = scanContext,
+                    )
+                }
+                entries
+            }
+        }
+
+        override fun openInputStream() = context.contentResolver.openInputStream(documentUri)
     }
 
     /**

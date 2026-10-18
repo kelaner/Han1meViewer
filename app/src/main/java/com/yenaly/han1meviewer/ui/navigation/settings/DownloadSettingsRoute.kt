@@ -22,9 +22,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -41,21 +43,40 @@ import com.yenaly.han1meviewer.ui.component.GlobalToasts
 import com.yenaly.han1meviewer.ui.component.TripleButtonDialog
 import com.yenaly.han1meviewer.ui.screen.settings.DownloadSettingsScreen
 import com.yenaly.han1meviewer.ui.screen.settings.DownloadSettingsUiState
+import com.yenaly.han1meviewer.util.LocalDownloadUpdates
+import com.yenaly.han1meviewer.util.LocalDownloadMaintenance
+import kotlinx.coroutines.CancellationException
 import com.yenaly.han1meviewer.util.SafFileManager
 import com.yenaly.han1meviewer.util.SafFileManager.KEY_TREE_URI
 import com.yenaly.han1meviewer.worker.HanimeDownloadManagerV2
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val DOWNLOAD_COUNT_LIMIT = "download_count_limit"
 private const val DOWNLOAD_SPEED_LIMIT = "download_speed_limit"
 private const val DOWNLOAD_USE_PRIVATE_STORAGE = "use_private_storage"
+
+private enum class MaintenanceAction {
+    RESTORE,
+    CLEAN_REDUNDANT,
+    CLEAR_INVALID,
+    REPAIR_COVERS,
+}
 
 @Composable
 fun DownloadSettingsRouteScreen(
     activity: MainActivity,
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
+    val coroutineScope = rememberCoroutineScope()
     var refreshKey by remember { mutableIntStateOf(0) }
     var showDownloadPathDialog by remember { mutableStateOf(false) }
+    var pendingMaintenanceAction by remember { mutableStateOf<MaintenanceAction?>(null) }
+    var maintenanceRunning by remember { mutableStateOf(false) }
+    var maintenanceTitle by remember { mutableStateOf("") }
+    var maintenanceProgress by remember { mutableStateOf(LocalDownloadMaintenance.Progress()) }
     var showRestoreDefaultConfirm by remember { mutableStateOf(false) }
     var showStoragePermissionDialog by remember { mutableStateOf(false) }
     var showImportConfirm by remember { mutableStateOf(false) }
@@ -78,7 +99,7 @@ fun DownloadSettingsRouteScreen(
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
             SafFileManager.persistUriPermission(context, result.data)
             Preferences.preferenceSp.edit { putBoolean(DOWNLOAD_USE_PRIVATE_STORAGE, false) }
-            GlobalToasts.show(context.getString(R.string.directory_saved, result.data.toString()), level = GlobalToasts.ToastLevel.SUCCESS)
+            GlobalToasts.show(resources.getString(R.string.directory_saved, result.data.toString()), level = GlobalToasts.ToastLevel.SUCCESS)
             refreshKey++
         } else {
             GlobalToasts.show(noDirectorySelected, level = GlobalToasts.ToastLevel.INFO)
@@ -110,6 +131,47 @@ fun DownloadSettingsRouteScreen(
         }
     }
 
+    fun runMaintenance(action: MaintenanceAction) {
+        if (!LocalDownloadUpdates.operationMutex.tryLock()) {
+            GlobalToasts.show("本地下载正在处理中，请稍后重试", level = GlobalToasts.ToastLevel.INFO)
+            return
+        }
+        maintenanceProgress = LocalDownloadMaintenance.Progress()
+        maintenanceRunning = true
+        maintenanceTitle = when (action) {
+            MaintenanceAction.RESTORE -> "恢复本地下载记录"
+            MaintenanceAction.CLEAN_REDUNDANT -> "清理冗余本地文件"
+            MaintenanceAction.CLEAR_INVALID -> "清理无效下载记录"
+            MaintenanceAction.REPAIR_COVERS -> "修复本地封面"
+        }
+        coroutineScope.launch {
+            try {
+                val onProgress: suspend (LocalDownloadMaintenance.Progress) -> Unit = { progress ->
+                    withContext(Dispatchers.Main.immediate) { maintenanceProgress = progress }
+                }
+                val message = withContext(Dispatchers.IO) {
+                    when (action) {
+                        MaintenanceAction.RESTORE -> LocalDownloadMaintenance.restore(context, onProgress)
+                        MaintenanceAction.CLEAN_REDUNDANT -> LocalDownloadMaintenance.cleanRedundant(context, onProgress)
+                        MaintenanceAction.CLEAR_INVALID -> LocalDownloadMaintenance.clearInvalid(context, onProgress)
+                        MaintenanceAction.REPAIR_COVERS -> LocalDownloadMaintenance.repairCovers(context, onProgress)
+                    }
+                }
+                refreshKey++
+                GlobalToasts.show(message, level = GlobalToasts.ToastLevel.INFO)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (error: Exception) {
+                GlobalToasts.show(error.message ?: "本地下载维护失败", level = GlobalToasts.ToastLevel.ERROR)
+            } finally {
+                maintenanceRunning = false
+                pendingMaintenanceAction = null
+                LocalDownloadUpdates.notifyChanged()
+                LocalDownloadUpdates.operationMutex.unlock()
+            }
+        }
+    }
+
     DownloadSettingsScreen(
         state = uiState,
         maxDownloadCountLimit = 10,
@@ -126,6 +188,18 @@ fun DownloadSettingsRouteScreen(
                 showImportPathHint = true
             }
         },
+        onRestoreLocalDownloads = {
+            pendingMaintenanceAction = MaintenanceAction.RESTORE
+        },
+        onCleanRedundantLocalFiles = {
+            pendingMaintenanceAction = MaintenanceAction.CLEAN_REDUNDANT
+        },
+        onClearInvalidLocalRecords = {
+            pendingMaintenanceAction = MaintenanceAction.CLEAR_INVALID
+        },
+        onRepairLocalCovers = {
+            pendingMaintenanceAction = MaintenanceAction.REPAIR_COVERS
+        },
         onDownloadCountLimitChange = { value ->
             Preferences.preferenceSp.edit { putInt(DOWNLOAD_COUNT_LIMIT, value) }
             HanimeDownloadManagerV2.maxConcurrentDownloadCount = value
@@ -139,7 +213,51 @@ fun DownloadSettingsRouteScreen(
             Preferences.downloadAutoGroup = checked
             refreshKey++
         },
+        onDefaultDownloadViewChange = { view ->
+            Preferences.defaultDownloadView = view
+            refreshKey++
+        },
     )
+
+    pendingMaintenanceAction?.let { action ->
+        val title = when (action) {
+            MaintenanceAction.RESTORE -> "恢复本地下载记录"
+            MaintenanceAction.CLEAN_REDUNDANT -> "清理冗余本地文件"
+            MaintenanceAction.CLEAR_INVALID -> "清理无效下载记录"
+            MaintenanceAction.REPAIR_COVERS -> "修复本地封面"
+        }
+        val message = when (action) {
+            MaintenanceAction.RESTORE -> "将扫描本地下载目录并恢复下载记录，是否继续？"
+            MaintenanceAction.CLEAN_REDUNDANT -> "将删除下载目录中不属于当前下载列表、且可确认为本应用下载文件的冗余内容。无法识别的文件会保留；删除不可撤销，是否继续？"
+            MaintenanceAction.CLEAR_INVALID -> "将移除已完成列表中视频确实缺失或大小为 0 的记录，保留无法访问、无法确认及未完成的项目，不删除本地文件，是否继续？"
+            MaintenanceAction.REPAIR_COVERS -> "将检查缺失或损坏的封面，尝试从原封面地址重新获取，失败时从本地视频生成封面，是否继续？"
+        }
+        ConfirmDialog(
+            visible = !maintenanceRunning,
+            title = title,
+            message = message,
+            confirmText = "确认",
+            dismissText = "取消",
+            onConfirm = { runMaintenance(action) },
+            onDismiss = { pendingMaintenanceAction = null },
+        )
+    }
+
+    if (maintenanceRunning) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(maintenanceTitle) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("总数：${maintenanceProgress.total}（扫描发现候选时更新）")
+                    Text("已完成：${maintenanceProgress.completed}（含失败、跳过）")
+                    Text("失败：${maintenanceProgress.failed}    跳过：${maintenanceProgress.skipped}")
+                    maintenanceProgress.currentName?.let { Text("最近处理：$it") }
+                }
+            },
+            confirmButton = {},
+        )
+    }
 
     if (!Preferences.isUsePrivateStorage) {
         TripleButtonDialog(
@@ -237,7 +355,7 @@ fun DownloadSettingsRouteScreen(
                         importTotal = total
                         if (migrated == total) {
                             showImportProgress = false
-                            GlobalToasts.show(context.getString(R.string.import_complete, total), level = GlobalToasts.ToastLevel.SUCCESS)
+                            GlobalToasts.show(resources.getString(R.string.import_complete, total), level = GlobalToasts.ToastLevel.SUCCESS)
                             refreshKey++
                         }
                     }
@@ -310,6 +428,7 @@ private fun buildDownloadSettingsUiState(context: Context): DownloadSettingsUiSt
                     )
                 ].toDownloadSpeedPrettyString(context),
                 downloadAutoGroup = Preferences.downloadAutoGroup,
+                defaultDownloadView = Preferences.defaultDownloadView,
             )
         )?.name ?: uri.toString()
     }
@@ -328,5 +447,6 @@ private fun buildDownloadSettingsUiState(context: Context): DownloadSettingsUiSt
         downloadSpeedLimitSummary = SpeedLimitInterceptor.SPEED_BYTES[speedIndex]
             .toDownloadSpeedPrettyString(context),
         downloadAutoGroup = Preferences.downloadAutoGroup,
+        defaultDownloadView = Preferences.defaultDownloadView,
     )
 }

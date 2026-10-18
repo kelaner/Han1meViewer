@@ -1,6 +1,7 @@
 package com.yenaly.han1meviewer.logic.entity.download
 
 import androidx.annotation.IntRange
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -88,6 +89,13 @@ data class HanimeDownloadEntity(
 
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
+
+    /** Cached artist.name / artist.genre; null is displayed as unknown. */
+    val author: String? = null,
+    val genre: String? = null,
+    /** Includes a completed attempt where info.json or artist fields were missing. */
+    @ColumnInfo(defaultValue = "0")
+    val metadataResolved: Boolean = false,
 ) {
     /**
      * 下载进度

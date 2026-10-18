@@ -22,6 +22,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.yenaly.han1meviewer.util.isFirebaseAvailable
 import com.google.firebase.Firebase
 import com.google.firebase.crashlytics.crashlytics
 import com.yenaly.han1meviewer.EMPTY_STRING
@@ -133,9 +134,11 @@ class HUpdateWorker(
             // 通告栏里只放翻译好的具体原因
             error.printStackTrace()
             val diagnostic = HUpdater.errorDetail(error)
-            Firebase.crashlytics.recordException(
-                if (diagnostic != null) IllegalStateException(diagnostic, error) else error
-            )
+            if (isFirebaseAvailable()) {
+                Firebase.crashlytics.recordException(
+                    if (diagnostic != null) IllegalStateException(diagnostic, error) else error
+                )
+            }
             file.delete()
             cancelDownloadNotification()
             showFailureNotification(error)

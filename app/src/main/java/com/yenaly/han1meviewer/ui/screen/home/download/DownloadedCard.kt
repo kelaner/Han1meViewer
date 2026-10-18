@@ -237,6 +237,7 @@ fun DownloadedVideoCard(
                     ) {
                         AssistChip(
                             onClick = onOpenVideo,
+                            enabled = !isMultiSelect,
                             label = { Text(item.video.videoCode) },
                             colors = AssistChipDefaults.assistChipColors(
                                 containerColor = MaterialTheme.colorScheme.tertiaryContainer,
@@ -261,7 +262,7 @@ fun DownloadedVideoCard(
                     }
                 }
             }
-            Row(
+            if (!isMultiSelect) Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {

@@ -21,6 +21,7 @@ import com.yenaly.han1meviewer.logic.state.PageState
 import com.yenaly.han1meviewer.logic.state.WebsiteState
 import com.yenaly.han1meviewer.logout
 import com.yenaly.han1meviewer.ui.viewmodel.AppViewModel
+import com.yenaly.han1meviewer.util.isFirebaseAvailable
 import com.yenaly.yenaly_libs.utils.getSpValue
 import com.yenaly.yenaly_libs.utils.putSpValue
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +47,9 @@ class HomePageViewModel: ViewModel() {
     private val _homePageFlow = MutableStateFlow<PageState<HomeData>>(PageState.Loading)
     val homePageFlow = _homePageFlow.asStateFlow()
 
-    private val database = FirebaseDatabase.getInstance(FIREBASE_REALTIME_DATABASE)
+    private val database by lazy {
+        if (isFirebaseAvailable()) FirebaseDatabase.getInstance(FIREBASE_REALTIME_DATABASE) else null
+    }
 
     private val _sessionExpiredMessage = MutableSharedFlow<SessionExpiredMessage>()
     val sessionExpiredMessage = _sessionExpiredMessage
@@ -115,7 +118,12 @@ class HomePageViewModel: ViewModel() {
                 return@suspendCancellableCoroutine
             }
 
-            database.getReference("announcements").get()
+            val firebaseDatabase = database
+            if (firebaseDatabase == null) {
+                continuation.resume(emptyList())
+                return@suspendCancellableCoroutine
+            }
+            firebaseDatabase.getReference("announcements").get()
                 .addOnSuccessListener { snapshot ->
                     val list = mutableListOf<Announcement>()
                     if (snapshot.exists()) {
