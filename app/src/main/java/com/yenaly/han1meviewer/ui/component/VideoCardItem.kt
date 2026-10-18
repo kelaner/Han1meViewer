@@ -19,11 +19,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -32,12 +35,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yenaly.han1meviewer.R
+import com.yenaly.han1meviewer.logic.DatabaseRepo
 import com.yenaly.han1meviewer.logic.model.VideoItemType
 import com.yenaly.han1meviewer.ui.preview.ComponentPreview
 import com.yenaly.han1meviewer.ui.preview.fakeVideosItem
 import com.yenaly.han1meviewer.ui.screen.RetryableImage
 import com.yenaly.han1meviewer.util.DisplayTextLocalizer
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 
 /**
@@ -50,6 +57,7 @@ import com.yenaly.han1meviewer.util.DisplayTextLocalizer
  * @param isHorizontalCard 是否为水平卡片布局，默认为 true
  * @param onClickVideosItem 点击回调，参数为视频 ID
  * @param onLongClickVideosItem 长按回调，参数为视频 ID 和视频标题
+ * @param isDownloaded 是否已下载，默认共享观察数据库中的下载完成状态
  */
 @Composable
 fun VideoCardItem(
@@ -58,6 +66,7 @@ fun VideoCardItem(
     isHorizontalCard: Boolean = true,
     isWatched: Boolean = false,
     isPlaying: Boolean = false,
+    isDownloaded: Boolean = rememberDownloadedStatus(videoItem.videoCode),
     onClickVideosItem: (String) -> Unit,
     onLongClickVideosItem: (String, String) -> Unit,
 ) {
@@ -96,24 +105,47 @@ fun VideoCardItem(
                     contentScale = ContentScale.FillWidth,
                 )
 
-                if (isWatched) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 6.dp, end = 6.dp)
-                            .background(
-                                color = Color.Black.copy(alpha = 0.65f),
-                                shape = RoundedCornerShape(4.dp)
-                            )
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 6.dp, end = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (isWatched) {
                         Text(
+                            modifier = Modifier
+                                .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
                             text = stringResource(R.string.played),
                             color = Color.White,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.labelSmall
+                            style = MaterialTheme.typography.labelSmall,
                         )
+                    }
+                    if (isDownloaded) {
+                        Row(
+                            modifier = Modifier
+                                .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_baseline_download_24),
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(12.dp),
+                            )
+                            Text(
+                                text = stringResource(R.string.downloaded),
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
                     }
                 }
 
@@ -259,6 +291,18 @@ fun VideoCardItem(
     }
 }
 
+@Composable
+private fun rememberDownloadedStatus(videoCode: String): Boolean {
+    if (LocalInspectionMode.current) return false
+    val status = remember(videoCode) {
+        DatabaseRepo.HanimeDownload.downloadedVideoCodes
+            .map { videoCode in it }
+            .distinctUntilChanged()
+    }
+    val isDownloaded by status.collectAsStateWithLifecycle(initialValue = false)
+    return isDownloaded
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun VideoCardItemPreview() {
@@ -268,6 +312,7 @@ private fun VideoCardItemPreview() {
             onClickVideosItem = {},
             onLongClickVideosItem = { _, _ -> },
             isWatched = true,
+            isDownloaded = true,
             isPlaying = true
         )
     }

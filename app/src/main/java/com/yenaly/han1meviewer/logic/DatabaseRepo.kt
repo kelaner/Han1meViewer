@@ -15,9 +15,16 @@ import com.yenaly.han1meviewer.logic.entity.download.DownloadGroupEntity
 import com.yenaly.han1meviewer.logic.entity.download.HanimeDownloadEntity
 import com.yenaly.han1meviewer.logic.model.SearchOption
 import com.yenaly.yenaly_libs.utils.applicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
@@ -214,6 +221,16 @@ object DatabaseRepo {
     object HanimeDownload {
         private val hanimeDownloadDao = DownloadDatabase.instance.hanimeDownloadDao
         private val downloadGroupDao = DownloadDatabase.instance.downloadGroupDao
+        private val downloadStatusScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+        // 所有浏览卡片共享一个 Room 订阅；没有可见卡片时停止观察数据库。
+        val downloadedVideoCodes by lazy {
+            hanimeDownloadDao.observeDownloadedVideoCodes()
+                .map { it.toSet() }
+                .distinctUntilChanged()
+                .stateIn(downloadStatusScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+        }
+
         fun loadAllDownloadingHanime() =
             hanimeDownloadDao.loadAllDownloadingHanime()
 

@@ -10,6 +10,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +45,9 @@ internal fun DownloadToolbar(
     onSearch: () -> Unit,
     onCreateGroup: () -> Unit,
     onReadDirectory: () -> Unit,
+    onUpdateSources: () -> Unit,
+    updateEnabled: Boolean,
+    updating: Boolean,
 ) {
     var menu by remember { mutableStateOf<String?>(null) }
     val actions = listOf(
@@ -57,15 +61,22 @@ internal fun DownloadToolbar(
         DownloadAction("创建新分组", R.drawable.baseline_add_24, onCreateGroup),
         DownloadAction("读取下载目录", R.drawable.ic_baseline_download_24, onReadDirectory),
     )
-    val directCount = downloadDirectActionCount(width.value.toInt(), actions.size)
+    val directCount = downloadDirectActionCount((width.value - 88).toInt(), actions.size)
+    val updateButton: @Composable () -> Unit = {
+        TextButton(onClick = onUpdateSources, enabled = updateEnabled) {
+            Text(if (updating) "更新中" else "一键更新")
+        }
+    }
     Box {
         Row {
-            actions.take(directCount).forEach { action ->
+            actions.take(directCount).forEachIndexed { index, action ->
+                if (directCount == actions.size && index == directCount - 1) updateButton()
                 IconButton(onClick = action.run, modifier = Modifier.size(48.dp)) {
                     Icon(painterResource(action.icon), contentDescription = action.label)
                 }
             }
             if (directCount < actions.size) {
+                updateButton()
                 IconButton(onClick = { menu = "more" }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.MoreVert, contentDescription = "更多")
                 }

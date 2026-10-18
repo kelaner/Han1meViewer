@@ -23,6 +23,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.yenaly.han1meviewer.R
+import com.yenaly.han1meviewer.ui.component.VideoCardItem
+import com.yenaly.han1meviewer.ui.preview.fakeVideosItem
 import com.yenaly.han1meviewer.logic.entity.download.DownloadGroupEntity
 import com.yenaly.han1meviewer.logic.entity.download.HanimeDownloadEntity
 import com.yenaly.han1meviewer.logic.entity.download.VideoWithCategories
@@ -72,6 +74,53 @@ class DownloadLibraryUiTest {
             addAll(videos.map { DownloadItemNode(it, 1) })
         },
     )
+
+    @Test
+    fun downloadedBadgeAppearsOnlyForDownloadedCardsAndKeepsWatchedBadge() {
+        var downloaded by mutableStateOf(false)
+        compose.setContent {
+            MaterialTheme {
+                VideoCardItem(
+                    videoItem = fakeVideosItem,
+                    isDownloaded = downloaded,
+                    isWatched = true,
+                    onClickVideosItem = {},
+                    onLongClickVideosItem = { _, _ -> },
+                )
+            }
+        }
+        compose.onNodeWithText(label(R.string.downloaded)).assertDoesNotExist()
+        compose.runOnIdle { downloaded = true }
+        compose.onNodeWithText(label(R.string.downloaded)).assertIsDisplayed()
+        compose.onNodeWithText(label(R.string.played)).assertIsDisplayed()
+        compose.runOnIdle { downloaded = false }
+        compose.onNodeWithText(label(R.string.downloaded)).assertDoesNotExist()
+    }
+
+    @Test
+    fun batchUpdateShowsProgressThenSummaryAndCanBeDismissed() {
+        var state by mutableStateOf(DownloadBatchRefreshState(
+            isRunning = true, total = 4, processed = 2, currentTitle = "当前视频",
+            higherQualityCount = 1,
+        ))
+        var dismissed = false
+        compose.setContent {
+            MaterialTheme { DownloadSourceUpdateDialog(state) { dismissed = true } }
+        }
+        compose.onNodeWithText("已处理 2/4（50%）").assertIsDisplayed()
+        compose.onNodeWithText("当前视频").assertIsDisplayed()
+        compose.onNodeWithText("确定").assertDoesNotExist()
+        compose.runOnIdle {
+            state = state.copy(isRunning = false, isComplete = true, processed = 4,
+                failures = listOf("失败视频：连接失败"))
+        }
+        compose.onNodeWithText("已完成 4/4 项检查。").assertIsDisplayed()
+        compose.onNodeWithText("发现更高清源：1 项").assertIsDisplayed()
+        compose.onNodeWithText("暂无更高清源：2 项").assertIsDisplayed()
+        compose.onNodeWithText("更新失败：1 项").assertIsDisplayed()
+        compose.onNodeWithText("确定").performClick()
+        compose.runOnIdle { assertTrue(dismissed) }
+    }
 
     @Test
     fun selectionAndBatchActionsWorkAcrossLayoutsAndGrouping() {
@@ -149,7 +198,7 @@ class DownloadLibraryUiTest {
     }
 
     @Test
-    fun narrowToolbarKeepsViewAndSortVisibleAndOverflowActionsUsable() {
+    fun narrowToolbarKeepsUpdatePenultimateAndOverflowActionsUsable() {
         var mode by mutableStateOf(DownloadedViewMode.LIST)
         var grouped by mutableStateOf(true)
         var multiSelect by mutableStateOf(false)
@@ -171,13 +220,23 @@ class DownloadLibraryUiTest {
                         onSearch = { actions += "search" },
                         onCreateGroup = { actions += "create" },
                         onReadDirectory = { actions += "read" },
+                        onUpdateSources = { actions += "update" },
+                        updateEnabled = true,
+                        updating = false,
                     )
                 }
             }
         }
-        compose.onNodeWithContentDescription("切换多列视图").assertIsDisplayed().performClick()
-        compose.onNodeWithContentDescription("切换列表视图").assertIsDisplayed()
-        compose.onNodeWithContentDescription("排序").assertIsDisplayed().performClick()
+        compose.onNodeWithText("一键更新").assertIsDisplayed().performClick()
+        assertTrue(
+            compose.onNodeWithText("一键更新").fetchSemanticsNode().boundsInRoot.right <=
+                compose.onNodeWithContentDescription("更多").fetchSemanticsNode().boundsInRoot.left
+        )
+        compose.onNodeWithContentDescription("更多").performClick()
+        compose.onNodeWithText("切换多列视图").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("更多").performClick()
+        compose.onNodeWithText("切换列表视图").assertIsDisplayed()
+        compose.onNodeWithText("排序").assertIsDisplayed().performClick()
         val sort = DownloadSort.entries.first()
         compose.onNodeWithText(label(sort.labelRes)).performClick()
         compose.onNodeWithContentDescription("更多").performClick()
@@ -201,7 +260,7 @@ class DownloadLibraryUiTest {
             assertEquals(DownloadedViewMode.GRID, mode)
             assertTrue(!grouped)
             assertTrue(multiSelect)
-            assertEquals(listOf("sort:$sort", "genre:Regression genre", "search", "create", "read"), actions)
+            assertEquals(listOf("update", "sort:$sort", "genre:Regression genre", "search", "create", "read"), actions)
         }
     }
 }

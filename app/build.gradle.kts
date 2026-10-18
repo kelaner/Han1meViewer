@@ -54,7 +54,7 @@ android {
         applicationId = "com.kelaner.hani"
         minSdk = property("min.sdk")?.toString()?.toIntOrNull()
         targetSdk = property("target.sdk")?.toString()?.toIntOrNull()
-        val (code, name) = createVersion(major = 1, minor = 1, patch = 0, revision = 2)
+        val (code, name) = createVersion(major = 1, minor = 1, patch = 0, revision = 3)
         versionCode = code
         versionName = name
 

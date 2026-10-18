@@ -37,6 +37,17 @@ data class DownloadSourceRefreshState(
     val error: String? = null,
 )
 
+data class DownloadBatchRefreshState(
+    val isRunning: Boolean = false,
+    val isComplete: Boolean = false,
+    val total: Int = 0,
+    val processed: Int = 0,
+    val currentTitle: String? = null,
+    val higherQualityCount: Int = 0,
+    val failures: List<String> = emptyList(),
+    val error: String? = null,
+)
+
 data class DownloadSourceAvailability(
     val qualities: List<String> = emptyList(),
     val higherQualities: List<String> = emptyList(),
@@ -123,6 +134,9 @@ sealed interface DownloadEvent {
 
     /** 重新读取本地 info.json 并更新下载元数据。 */
     data class OnRefreshMetadata(val video: VideoWithCategories? = null) : DownloadEvent
+
+    /** 检查完整下载库中低于 1080p 的已完成记录。 */
+    data object OnRefreshAllLowQualitySources : DownloadEvent
 
     /** 从源站刷新视频信息及可用画质。 */
     data class OnRefreshSource(val video: VideoWithCategories) : DownloadEvent

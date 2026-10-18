@@ -33,6 +33,7 @@ import com.yenaly.han1meviewer.ui.component.ConfirmDialog
 import com.yenaly.han1meviewer.ui.component.GlobalToasts
 import com.yenaly.han1meviewer.ui.screen.home.DownloadScreen
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadEvent
+import com.yenaly.han1meviewer.ui.screen.home.download.DownloadSourceUpdateDialog
 import com.yenaly.han1meviewer.ui.viewmodel.DownloadViewModel
 import com.yenaly.han1meviewer.util.SafFileManager
 import com.yenaly.han1meviewer.util.LocalDownloadUpdates
@@ -59,6 +60,7 @@ fun DownloadRouteScreen(
     val scope = rememberCoroutineScope()
     val dao = remember { DownloadDatabase.instance.hanimeDownloadDao }
     val sourceRefresh by viewModel.sourceRefresh.collectAsState()
+    val batchRefresh by viewModel.batchRefresh.collectAsState()
     androidx.compose.runtime.LaunchedEffect(sourceRefresh.error) {
         sourceRefresh.error?.let { GlobalToasts.show(it, level = GlobalToasts.ToastLevel.ERROR) }
     }
@@ -146,6 +148,7 @@ fun DownloadRouteScreen(
             }
 
             is DownloadEvent.OnRefreshMetadata -> viewModel.refreshDownloadedMetadata(event.video)
+            is DownloadEvent.OnRefreshAllLowQualitySources -> viewModel.refreshAllLowQualitySources()
             is DownloadEvent.OnRefreshSource -> viewModel.refreshSource(event.video)
             is DownloadEvent.OnSelectSourceQuality -> viewModel.switchSource(event.video, event.quality)
             is DownloadEvent.OnRequestSourceSwitch -> viewModel.refreshSource(event.video, persistMetadata = false)
@@ -168,6 +171,7 @@ fun DownloadRouteScreen(
         collapseDownloadedGroup = Preferences.collapseDownloadedGroup,
         defaultGrouped = Preferences.downloadDefaultGrouped,
         sourceRefresh = sourceRefresh,
+        batchRefreshing = batchRefresh.isRunning,
         onBack = onBack,
         onLoadDownloaded = {
             viewModel.loadAllDownloadedHanime(
@@ -176,6 +180,11 @@ fun DownloadRouteScreen(
             )
         },
         onEvent = handleEvent,
+    )
+
+    DownloadSourceUpdateDialog(
+        state = batchRefresh,
+        onDismiss = viewModel::dismissBatchRefreshResult,
     )
 
     ConfirmDialog(

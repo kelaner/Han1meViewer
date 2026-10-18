@@ -18,6 +18,9 @@ import com.yenaly.han1meviewer.HFileManager
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadSourceAvailability
 import com.yenaly.han1meviewer.util.LocalDownloadUpdates
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadSourceRefreshState
+import com.yenaly.han1meviewer.ui.screen.home.download.DownloadBatchRefreshState
+import com.yenaly.han1meviewer.ui.screen.home.download.refreshLowQualityDownloads
+import com.yenaly.han1meviewer.ui.screen.home.download.downloadQualityRank
 import com.yenaly.han1meviewer.logic.entity.download.DownloadGroupEntity
 import com.yenaly.han1meviewer.logic.entity.download.HanimeDownloadEntity
 import com.yenaly.han1meviewer.logic.entity.download.VideoWithCategories
@@ -55,6 +58,8 @@ class DownloadViewModel(application: Application) : YenalyViewModel(application)
     private val metadataMutex = Mutex()
     private val _sourceRefresh = MutableStateFlow(DownloadSourceRefreshState())
     val sourceRefresh = _sourceRefresh.asStateFlow()
+    private val _batchRefresh = MutableStateFlow(DownloadBatchRefreshState())
+    val batchRefresh = _batchRefresh.asStateFlow()
     private val sourceLocks = mutableMapOf<Int, Mutex>()
     private val sourceJobs = mutableMapOf<Int, Job>()
     private var observedLocalRevision = LocalDownloadUpdates.changes.value
@@ -195,7 +200,7 @@ class DownloadViewModel(application: Application) : YenalyViewModel(application)
 
     /** Refresh origin metadata only after at least one downloadable source has been verified. */
     fun refreshSource(video: VideoWithCategories, persistMetadata: Boolean = true) {
-        if (_sourceRefresh.value.loadingVideoId != null) return
+        if (_sourceRefresh.value.loadingVideoId != null || _batchRefresh.value.isRunning) return
         val entity = video.video
         _sourceRefresh.value = _sourceRefresh.value.copy(
             loadingVideoId = entity.id, error = null,
@@ -203,51 +208,7 @@ class DownloadViewModel(application: Application) : YenalyViewModel(application)
         )
         sourceJobs[entity.id] = viewModelScope.launch {
             try {
-                val result = withContext(Dispatchers.IO) {
-                    val source = fetchOrigin(entity.videoCode)
-                    val qualities = source.videoUrls.filter { (_, link) ->
-                        if (link.link.isBlank()) false else try {
-                            probeSourceLength(link.link)
-                            true
-                        } catch (e: CancellationException) { throw e }
-                        catch (_: Exception) { false }
-                    }.keys.toList()
-                    if (qualities.isEmpty()) throw IOException("源视频没有可下载画质")
-                    val refreshedAt = System.currentTimeMillis()
-                    if (persistMetadata) {
-                        var validCover = false
-                        if (source.coverUrl.isNotBlank()) {
-                            try {
-                                ServiceCreator.downloadClient.newBuilder()
-                                    .callTimeout(8, java.util.concurrent.TimeUnit.SECONDS).build()
-                                    .newCall(Request.Builder().url(source.coverUrl).get().build()).await().use {
-                                        validCover = it.isSuccessful && it.header("Content-Type").orEmpty().startsWith("image/", true)
-                                    }
-                            } catch (e: CancellationException) { throw e }
-                            catch (_: Exception) { /* Keep the previous valid cover. */ }
-                        }
-                        val count = DownloadDatabase.instance.hanimeDownloadDao.saveSourceMetadata(
-                            id = entity.id, videoUri = entity.videoUri,
-                            coverUrl = if (validCover) source.coverUrl else entity.coverUrl,
-                            coverUri = if (validCover) null else entity.coverUri,
-                            title = source.title.takeIf(String::isNotBlank) ?: entity.title,
-                            author = source.artist?.name?.takeIf(String::isNotBlank),
-                            genre = source.artist?.genre?.takeIf(String::isNotBlank),
-                            uploadTime = source.uploadTime?.toString(),
-                            qualities = qualities.joinToString(","), refreshedAt = refreshedAt,
-                        )
-                        if (count == 0) throw IOException("下载记录已变化，请刷新列表后重试")
-                    }
-                    DownloadSourceAvailability(
-                        qualities = qualities,
-                        higherQualities = qualities.filter {
-                            val current = qualityRank(entity.quality)
-                            val candidate = qualityRank(it)
-                            current != null && candidate != null && candidate > current
-                        },
-                        refreshedAt = refreshedAt,
-                    )
-                }
+                val result = refreshSourceEntity(entity, persistMetadata)
                 _sourceRefresh.value = _sourceRefresh.value.copy(
                     loadingVideoId = null, results = _sourceRefresh.value.results + (entity.id to result),
                 )
@@ -258,6 +219,86 @@ class DownloadViewModel(application: Application) : YenalyViewModel(application)
                 _sourceRefresh.value = _sourceRefresh.value.copy(loadingVideoId = null, error = e.localizedMessage ?: "源站信息更新失败")
             } finally { sourceJobs.remove(entity.id) }
         }
+    }
+
+    fun refreshAllLowQualitySources() {
+        if (_batchRefresh.value.isRunning || _sourceRefresh.value.loadingVideoId != null) return
+        _batchRefresh.value = DownloadBatchRefreshState(isRunning = true)
+        viewModelScope.launch {
+            try {
+                val records = withContext(Dispatchers.IO) {
+                    DownloadDatabase.instance.hanimeDownloadDao.getAll()
+                }
+                refreshLowQualityDownloads(records, onProgress = { _batchRefresh.value = it }) { entity ->
+                    val result = refreshSourceEntity(entity)
+                    _sourceRefresh.value = _sourceRefresh.value.copy(
+                        results = _sourceRefresh.value.results + (entity.id to result),
+                    )
+                    result
+                }
+            } catch (e: CancellationException) {
+                _batchRefresh.value = _batchRefresh.value.copy(isRunning = false)
+                throw e
+            } catch (e: Exception) {
+                _batchRefresh.value = _batchRefresh.value.copy(
+                    isRunning = false, isComplete = true,
+                    error = e.localizedMessage ?: "读取下载记录失败，请重试",
+                )
+            }
+        }
+    }
+
+    fun dismissBatchRefreshResult() {
+        if (!_batchRefresh.value.isRunning) _batchRefresh.value = DownloadBatchRefreshState()
+    }
+
+    private suspend fun refreshSourceEntity(
+        entity: HanimeDownloadEntity,
+        persistMetadata: Boolean = true,
+    ): DownloadSourceAvailability = withContext(Dispatchers.IO) {
+        val source = fetchOrigin(entity.videoCode)
+        val qualities = source.videoUrls.filter { (_, link) ->
+            if (link.link.isBlank()) false else try {
+                probeSourceLength(link.link)
+                true
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { false }
+        }.keys.toList()
+        if (qualities.isEmpty()) throw IOException("源视频没有可下载画质")
+        val refreshedAt = System.currentTimeMillis()
+        if (persistMetadata) {
+            var validCover = false
+            if (source.coverUrl.isNotBlank()) {
+                try {
+                    ServiceCreator.downloadClient.newBuilder()
+                        .callTimeout(8, java.util.concurrent.TimeUnit.SECONDS).build()
+                        .newCall(Request.Builder().url(source.coverUrl).get().build()).await().use {
+                            validCover = it.isSuccessful && it.header("Content-Type").orEmpty().startsWith("image/", true)
+                        }
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { /* Keep the previous valid cover. */ }
+            }
+            val count = DownloadDatabase.instance.hanimeDownloadDao.saveSourceMetadata(
+                id = entity.id, videoUri = entity.videoUri,
+                coverUrl = if (validCover) source.coverUrl else entity.coverUrl,
+                coverUri = if (validCover) null else entity.coverUri,
+                title = source.title.takeIf(String::isNotBlank) ?: entity.title,
+                author = source.artist?.name?.takeIf(String::isNotBlank),
+                genre = source.artist?.genre?.takeIf(String::isNotBlank),
+                uploadTime = source.uploadTime?.toString(),
+                qualities = qualities.joinToString(","), refreshedAt = refreshedAt,
+            )
+            if (count == 0) throw IOException("下载记录已变化，请刷新列表后重试")
+        }
+        DownloadSourceAvailability(
+            qualities = qualities,
+            higherQualities = qualities.filter {
+                val current = downloadQualityRank(entity.quality)
+                val candidate = downloadQualityRank(it)
+                current != null && candidate != null && candidate > current
+            },
+            refreshedAt = refreshedAt,
+        )
     }
 
     private suspend fun fetchOrigin(code: String): HanimeVideo {
@@ -273,11 +314,8 @@ class DownloadViewModel(application: Application) : YenalyViewModel(application)
         return info ?: throw IOException("源站未返回视频信息")
     }
 
-    private fun qualityRank(quality: String): Int? =
-        Regex("(\\d+)").find(quality)?.groupValues?.get(1)?.toIntOrNull()
-
     fun switchSource(video: VideoWithCategories, quality: String) {
-        if (_sourceRefresh.value.loadingVideoId != null) return
+        if (_sourceRefresh.value.loadingVideoId != null || _batchRefresh.value.isRunning) return
         val entity = video.video
         sourceJobs.remove(entity.id)?.cancel()
         _sourceRefresh.value = _sourceRefresh.value.copy(
