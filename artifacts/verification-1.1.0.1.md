@@ -35,7 +35,7 @@ DAO 只对当前仍存在、Finished 且 URI 未变化的记录更新元数据�
 
 ## 更新与版本
 
-页面链接及 Retrofit baseUrl 切到 kelaner/Han1meViewer。Release 实际请求为 https://api.github.com/repos/kelaner/Han1meViewer/releases/latest ；CI 实际请求为 https://api.github.com/repos/kelaner/Han1meViewer/actions/workflows/ci.yml/runs?event=push&status=success&per_page=1&branch=main 。支持四段版本比较；优先从 Release 选择 arm64 APK，避免误下载说明文件。发布前该仓库尚无 Release，latest 返回404，CI请求200但无成功运行，发布后需再次验证。
+页面链接及 Retrofit baseUrl 切到 kelaner/Han1meViewer。Release 实际请求为 https://api.github.com/repos/kelaner/Han1meViewer/releases/latest ；CI 实际请求为 https://api.github.com/repos/kelaner/Han1meViewer/actions/workflows/ci.yml/runs?event=push&status=success&per_page=1&branch=main 。支持四段版本比较；优先从 Release 选择 arm64 APK，避免误下载说明文件。发布前该仓库尚无 Release，latest 返回404，CI请求200但无成功运行。发布后已认证的同一 `releases/latest` 实际请求返回 `v1.1.0.1`、draft=false、目标源码 `fea8c2e562eaed0916ef7b0f64dc9b01189c8ac2`，APK附件状态uploaded、大小和SHA-256与本地完全一致；Release https://github.com/kelaner/Han1meViewer/releases/tag/v1.1.0.1 已发布。另一次匿名请求触发当前出口IP的GitHub API限流（403），因此未验证匿名客户端在此出口恢复配额后的请求；不是旧仓库地址或缺少Release。未实际在设备设置页点击检查更新。
 
 版本名固定 1.1.0.1，versionCode 沿用项目原 UTC yyMMddHH 规则；APK 使用 Han1meViewer-1.1.0.1-arm64-v8a.apk。沿用原 release 仅 arm64-v8a，不擅自扩增或削减播放器依赖；R8、资源压缩和 JNI ZIP 压缩用于减小产物。正式 `:app:assembleRelease` BUILD SUCCESSFUL（3m4s），release lintVital 通过，无配置的 Crashlytics mapping 上传正确跳过。APK 大小 **25,552,160 字节（25.552 MB / 24.368 MiB）**，低于严格十进制100,000,000字节限制。`aapt dump badging` 确认 applicationId=com.yenaly.han1meviewer、versionName=1.1.0.1、versionCode=26101816、minSdk=27、targetSdk=37、native-code=arm64-v8a；`apksigner verify --verbose --print-certs` 通过，v2签名有效。
 
