@@ -16,6 +16,7 @@ data class LocalDownloadMetadata(
     val coverUrl: String = "",
     val author: String? = null,
     val genre: String? = null,
+    val uploadTime: String? = null,
     val videoUrls: Map<String, String> = emptyMap(),
 )
 
@@ -36,6 +37,7 @@ fun parseLocalDownloadMetadata(text: String): LocalDownloadMetadata {
         coverUrl = root.string("coverUrl").orEmpty(),
         author = artist?.string("name"),
         genre = artist?.string("genre"),
+        uploadTime = root.string("uploadTime"),
         videoUrls = urls,
     )
 }

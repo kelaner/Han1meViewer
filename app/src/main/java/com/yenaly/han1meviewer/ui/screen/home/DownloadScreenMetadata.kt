@@ -61,7 +61,13 @@ suspend fun loadDownloadedMetadata(
             try {
                 val parsed = context.contentResolver.openInputStream(uri)?.use { readLocalDownloadMetadata(it) }
                     ?: continue
-                metadata = DownloadedMetadata(parsed.author, parsed.genre)
+                metadata = DownloadedMetadata(
+                    author = parsed.author,
+                    genre = parsed.genre,
+                    title = parsed.title,
+                    coverUrl = parsed.coverUrl,
+                    uploadTime = parsed.uploadTime,
+                )
                 break
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { /* Isolate damaged, missing, or inaccessible metadata. */ }
@@ -74,5 +80,11 @@ suspend fun loadDownloadedMetadata(
 
 internal fun parseDownloadedMetadata(text: String): DownloadedMetadata {
     val parsed = parseLocalDownloadMetadata(text)
-    return DownloadedMetadata(parsed.author, parsed.genre)
+    return DownloadedMetadata(
+        author = parsed.author,
+        genre = parsed.genre,
+        title = parsed.title,
+        coverUrl = parsed.coverUrl,
+        uploadTime = parsed.uploadTime,
+    )
 }

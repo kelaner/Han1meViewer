@@ -2,13 +2,14 @@ package com.yenaly.han1meviewer.ui.screen.home.download
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,6 +32,7 @@ import com.yenaly.han1meviewer.logic.entity.download.VideoWithCategories
 import com.yenaly.han1meviewer.ui.theme.SpacingNormal
 import com.yenaly.yenaly_libs.utils.formatFileSizeV2
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DownloadedGridCard(
     item: VideoWithCategories,
@@ -43,9 +45,13 @@ fun DownloadedGridCard(
     isSelected: Boolean,
     onToggleSelect: () -> Unit,
     onMoveGroup: () -> Unit = {},
+    enableLongPressMove: Boolean = true,
 ) {
     Surface(
-        onClick = if (isMultiSelect) onToggleSelect else onOpenVideo,
+        modifier = Modifier.combinedClickable(
+            onClick = if (isMultiSelect) onToggleSelect else onOpenVideo,
+            onLongClick = if (isMultiSelect) null else if (enableLongPressMove) onMoveGroup else onOpenVideo,
+        ),
         shape = MaterialTheme.shapes.medium,
         tonalElevation = 2.dp,
         color = if (isMultiSelect && isSelected) MaterialTheme.colorScheme.secondaryContainer
@@ -87,17 +93,14 @@ fun DownloadedGridCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                     ) {
-                        IconButton(onClick = onMoveGroup) {
-                            Icon(Icons.AutoMirrored.Filled.DriveFileMove, stringResource(R.string.move_group))
-                        }
                         IconButton(onClick = onDeleteVideo) {
                             Icon(painterResource(R.drawable.ic_baseline_delete_24), stringResource(R.string.delete))
                         }
-                        IconButton(onClick = onExternalPlayback) {
-                            Icon(painterResource(R.drawable.ic_ext_link), stringResource(R.string.ext_player))
-                        }
                         IconButton(onClick = onLocalPlayback) {
                             Icon(painterResource(R.drawable.ic_baseline_play_arrow_24), stringResource(R.string.local_playback))
+                        }
+                        IconButton(onClick = onExternalPlayback) {
+                            Icon(painterResource(R.drawable.ic_ext_link), stringResource(R.string.ext_player))
                         }
                     }
                 }

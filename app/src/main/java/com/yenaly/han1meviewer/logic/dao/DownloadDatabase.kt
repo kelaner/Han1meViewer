@@ -21,7 +21,7 @@ import com.yenaly.yenaly_libs.utils.applicationContext
  */
 @Database(
     entities = [HanimeDownloadEntity::class, DownloadCategoryEntity::class, HanimeCategoryCrossRef::class, DownloadGroupEntity::class],
-    version = 6, exportSchema = false
+    version = 8, exportSchema = false
 )
 abstract class DownloadDatabase : RoomDatabase() {
 
@@ -35,7 +35,7 @@ abstract class DownloadDatabase : RoomDatabase() {
                 applicationContext,
                 DownloadDatabase::class.java,
                 "download.db"
-            ).addMigrations(Migration1To2, Migration2To3, Migration3To4, Migration4To5, Migration5To6).build()
+            ).addMigrations(Migration1To2, Migration2To3, Migration3To4, Migration4To5, Migration5To6, Migration6To7, Migration7To8).build()
         }
     }
 
@@ -44,6 +44,19 @@ abstract class DownloadDatabase : RoomDatabase() {
             db.execSQL("ALTER TABLE `HanimeDownloadEntity` ADD COLUMN `author` TEXT")
             db.execSQL("ALTER TABLE `HanimeDownloadEntity` ADD COLUMN `genre` TEXT")
             db.execSQL("ALTER TABLE `HanimeDownloadEntity` ADD COLUMN `metadataResolved` INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
+    object Migration6To7 : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `HanimeDownloadEntity` ADD COLUMN `uploadTime` TEXT")
+        }
+    }
+
+    object Migration7To8 : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `HanimeDownloadEntity` ADD COLUMN `availableQualities` TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE `HanimeDownloadEntity` ADD COLUMN `sourceRefreshedAt` INTEGER")
         }
     }
 

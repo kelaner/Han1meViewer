@@ -150,6 +150,12 @@ object HCacheManager {
                 }.getOrNull()
                 emit(
                     info?.copy(
+                        title = entity.title,
+                        uploadTime = entity.uploadTime?.let { runCatching { kotlinx.datetime.LocalDate.parse(it) }.getOrNull() } ?: info.uploadTime,
+                        artist = (info.artist ?: HanimeVideo.Artist()).copy(
+                            name = entity.author ?: info.artist?.name.orEmpty(),
+                            genre = entity.genre ?: info.artist?.genre.orEmpty(),
+                        ),
                         videoUrls = linkedMapOf(
                             entity.quality to HanimeLink(
                                 entity.videoUri, HFileManager.DEF_VIDEO_TYPE

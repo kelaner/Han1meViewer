@@ -101,6 +101,7 @@ internal suspend fun importLocalDownloadFolders(
                     downloadedLength = videoLength,
                     author = metadata.author,
                     genre = metadata.genre,
+                    uploadTime = metadata.uploadTime,
                     metadataResolved = true,
                 )
                 val applied = if (updateIfUnchanged != null) {
@@ -129,6 +130,7 @@ internal suspend fun importLocalDownloadFolders(
                     state = DownloadState.Finished,
                     author = metadata.author,
                     genre = metadata.genre,
+                    uploadTime = metadata.uploadTime,
                     metadataResolved = true,
                 )
                 val applied = if (insertIfUnchanged != null) {

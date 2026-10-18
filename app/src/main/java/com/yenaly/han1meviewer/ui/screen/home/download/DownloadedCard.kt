@@ -1,12 +1,12 @@
 package com.yenaly.han1meviewer.ui.screen.home.download
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,12 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -138,19 +137,18 @@ fun DownloadedVideoCard(
     onExternalPlayback: () -> Unit,
     onDeleteVideo: () -> Unit,
     onMoveGroup: () -> Unit,
+    onRefreshMetadata: () -> Unit = {},
+    onRefreshSource: () -> Unit = {},
+    onRequestSourceSwitch: () -> Unit = {},
+    higherQualities: List<String> = emptyList(),
+    sourceRefreshedAt: Long? = null,
+    sourceRefreshing: Boolean = false,
+    enableLongPressMove: Boolean = true,
     isMultiSelect: Boolean = false,
     isSelected: Boolean = false,
     onToggleSelect: (() -> Unit)? = null,
 ) {
-    val addedTime = if (!LocalInspectionMode.current) {
-        remember(item.video.addDate) {
-            Instant.fromEpochMilliseconds(item.video.addDate)
-                .toLocalDateTime(TimeZone.currentSystemDefault())
-                .format(LOCAL_DATE_TIME_FORMAT)
-        }
-    } else {
-        "2024-01-01 12:00"
-    }
+    val uploadTime = metadata?.uploadTime?.takeIf { it.isNotBlank() }
 
     ElevatedCard(
         modifier = Modifier
@@ -159,10 +157,10 @@ fun DownloadedVideoCard(
                 if (isMultiSelect) Modifier.combinedClickable(
                     onClick = { onToggleSelect?.invoke() },
                     onLongClick = {},
-                ) else Modifier.combinedClickable(
+                ) else if (enableLongPressMove) Modifier.combinedClickable(
                     onClick = onOpenVideo,
                     onLongClick = onMoveGroup,
-                )
+                ) else Modifier.combinedClickable(onClick = onOpenVideo, onLongClick = onOpenVideo)
             ),
         shape = RoundedCornerShape(24.dp),
     ) {
@@ -224,13 +222,15 @@ fun DownloadedVideoCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        text = addedTime,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    uploadTime?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -264,63 +264,31 @@ fun DownloadedVideoCard(
             }
             if (!isMultiSelect) Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                Button(
-                    onClick = onDeleteVideo,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColors(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_baseline_delete_24),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(stringResource(R.string.delete))
+                IconButton(onClick = onDeleteVideo) {
+                    Icon(painterResource(R.drawable.ic_baseline_delete_24), stringResource(R.string.delete))
+                }
+                IconButton(onClick = onRefreshSource, enabled = !sourceRefreshing) {
+                    if (sourceRefreshing) {
+                        androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                    } else {
+                        Icon(painterResource(R.drawable.ic_baseline_update_24), "从源站更新")
                     }
                 }
-
-                Button(
-                    onClick = onExternalPlayback,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColors(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_ext_link),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(stringResource(R.string.ext_player))
+                IconButton(onClick = onRequestSourceSwitch, enabled = !sourceRefreshing && sourceRefreshedAt != null && higherQualities.isNotEmpty()) {
+                    Box {
+                        Icon(painterResource(R.drawable.ic_baseline_switch_24), "换源")
+                        if (!sourceRefreshing && sourceRefreshedAt != null && higherQualities.isNotEmpty()) {
+                            androidx.compose.material3.Badge(modifier = Modifier.align(Alignment.TopEnd))
+                        }
                     }
                 }
-
-                Button(
-                    onClick = onLocalPlayback,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColors(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_baseline_play_arrow_24),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(stringResource(R.string.local_playback))
-                    }
+                IconButton(onClick = onLocalPlayback) {
+                    Icon(painterResource(R.drawable.ic_baseline_play_arrow_24), stringResource(R.string.local_playback))
+                }
+                IconButton(onClick = onExternalPlayback) {
+                    Icon(painterResource(R.drawable.ic_ext_link), stringResource(R.string.ext_player))
                 }
             }
         }

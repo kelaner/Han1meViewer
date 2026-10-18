@@ -217,6 +217,7 @@ class VideoRouteActions(
                 hanimeName = videoData.title,
                 videoCode = viewModel.videoCode,
                 coverUrl = videoData.coverUrl,
+                uploadTime = videoData.uploadTime?.toString(),
                 groupId = autoGroup?.id,
             ),
             redownload = redownload,

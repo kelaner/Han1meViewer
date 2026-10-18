@@ -213,6 +213,10 @@ fun DownloadSettingsRouteScreen(
             Preferences.downloadAutoGroup = checked
             refreshKey++
         },
+        onDefaultGroupedChange = { checked ->
+            Preferences.downloadDefaultGrouped = checked
+            refreshKey++
+        },
         onDefaultDownloadViewChange = { view ->
             Preferences.defaultDownloadView = view
             refreshKey++
@@ -428,6 +432,7 @@ private fun buildDownloadSettingsUiState(context: Context): DownloadSettingsUiSt
                     )
                 ].toDownloadSpeedPrettyString(context),
                 downloadAutoGroup = Preferences.downloadAutoGroup,
+                defaultGrouped = Preferences.downloadDefaultGrouped,
                 defaultDownloadView = Preferences.defaultDownloadView,
             )
         )?.name ?: uri.toString()
@@ -447,6 +452,7 @@ private fun buildDownloadSettingsUiState(context: Context): DownloadSettingsUiSt
         downloadSpeedLimitSummary = SpeedLimitInterceptor.SPEED_BYTES[speedIndex]
             .toDownloadSpeedPrettyString(context),
         downloadAutoGroup = Preferences.downloadAutoGroup,
+        defaultGrouped = Preferences.downloadDefaultGrouped,
         defaultDownloadView = Preferences.defaultDownloadView,
     )
 }

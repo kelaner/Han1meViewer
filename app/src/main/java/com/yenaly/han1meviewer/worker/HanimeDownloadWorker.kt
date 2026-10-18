@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.net.Uri
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -27,6 +28,8 @@ import com.yenaly.han1meviewer.HFileManager
 import com.yenaly.han1meviewer.HFileManager.createVideoName
 import com.yenaly.han1meviewer.R
 import com.yenaly.han1meviewer.logic.DatabaseRepo
+import com.yenaly.han1meviewer.logic.dao.DownloadDatabase
+import com.yenaly.han1meviewer.logic.dao.download.HanimeDownloadDao
 import com.yenaly.han1meviewer.logic.entity.download.DownloadGroupEntity
 import com.yenaly.han1meviewer.logic.entity.download.HanimeDownloadEntity
 import com.yenaly.han1meviewer.logic.network.ServiceCreator
@@ -43,6 +46,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import okhttp3.Response
@@ -80,6 +85,11 @@ class HanimeDownloadWorker(
         val hanimeName: String,
         val videoCode: String,
         val coverUrl: String,
+        val uploadTime: String? = null,
+        val replacementId: Int? = null,
+        val previousQuality: String? = null,
+        val previousVideoUri: String? = null,
+        val sourceQualities: String = "",
         /**
          * 目标下载分组，为 null 时使用默认分组（未分组）。
          */
@@ -94,6 +104,8 @@ class HanimeDownloadWorker(
                     hanimeName = entity.title,
                     videoCode = entity.videoCode,
                     coverUrl = entity.coverUrl,
+                    uploadTime = entity.uploadTime,
+                    replacementId = null,
                     groupId = entity.groupId,
                 )
             }
@@ -118,6 +130,11 @@ class HanimeDownloadWorker(
         const val HANIME_NAME = "hanime_name"
         const val VIDEO_CODE = "video_code"
         const val COVER_URL = "cover_url"
+        const val UPLOAD_TIME = "upload_time"
+        const val REPLACEMENT_ID = "replacement_id"
+        const val PREVIOUS_QUALITY = "previous_quality"
+        const val PREVIOUS_VIDEO_URI = "previous_video_uri"
+        const val SOURCE_QUALITIES = "source_qualities"
         const val GROUP_ID = "group_id"
         const val NO_GROUP_ID = -1
         const val REDOWNLOAD = "redownload"
@@ -174,6 +191,11 @@ class HanimeDownloadWorker(
     private val quality by inputData(QUALITY, EMPTY_STRING)
     private val videoCode by inputData(VIDEO_CODE, EMPTY_STRING)
     private val coverUrl by inputData(COVER_URL, EMPTY_STRING)
+    private val uploadTime by inputData(UPLOAD_TIME, EMPTY_STRING)
+    private val replacementId by inputData(REPLACEMENT_ID, -1)
+    private val previousQuality by inputData(PREVIOUS_QUALITY, EMPTY_STRING)
+    private val previousVideoUri by inputData(PREVIOUS_VIDEO_URI, EMPTY_STRING)
+    private val sourceQualities by inputData(SOURCE_QUALITIES, EMPTY_STRING)
     private val groupId by inputData(GROUP_ID, NO_GROUP_ID)
 
     private val fastPathCancel by inputData(FAST_PATH_CANCEL, false)
@@ -214,6 +236,7 @@ class HanimeDownloadWorker(
                         coverUrl = coverUrl,
                         coverUri = null,
                         title = hanimeName,
+                        uploadTime = uploadTime.takeIf { it.isNotBlank() },
                         addDate = System.currentTimeMillis(),
                         videoCode = videoCode,
                         videoUri = safUri?.toString() ?: file.toUri().toString(),
@@ -284,20 +307,27 @@ class HanimeDownloadWorker(
 
     private suspend fun download(): Result {
         return withContext(Dispatchers.IO) {
+            if (replacementId >= 0) return@withContext replaceSource()
             val file = HFileManager.getDownloadVideoFile(
                 context = context, title = hanimeName, quality = quality, suffix = videoType, videoCode = videoCode
             )
-            val safUri = SafFileManager.getDownloadVideoFileUri(context, videoCode, createVideoName(hanimeName, quality, videoType))
-            // 检查是否需要重下载
-            if (shouldRedownload || shouldDelete) {
+            val fileName = createVideoName(hanimeName, quality, videoType)
+            val safUri = SafFileManager.getDownloadVideoFileUri(context, videoCode, fileName)
+            // 删除是显式操作；重下载必须先完成新文件，再提交替换旧文件。
+            if (shouldDelete) {
                 HFileManager.getDownloadVideoFolder(context, videoCode).deleteRecursively()
                 DatabaseRepo.HanimeDownload.delete(videoCode)
-                if (shouldDelete) {
-                    return@withContext Result.success()
-                }
+                return@withContext Result.success()
             }
             var entity = try {
-                DatabaseRepo.HanimeDownload.find(videoCode, quality) ?: run {
+                if (replacementId >= 0) {
+                    val old = DownloadDatabase.instance.hanimeDownloadDao.findById(replacementId)
+                        ?: throw IOException("Replacement record no longer exists")
+                    if (old.videoCode != videoCode || old.quality != previousQuality ||
+                        old.videoUri != previousVideoUri || old.state != DownloadState.Finished
+                    ) throw IOException("Replacement record changed; preserving old download")
+                    old
+                } else DatabaseRepo.HanimeDownload.find(videoCode, quality) ?: run {
                     createNewRaf(file)
                     DatabaseRepo.HanimeDownload.find(videoCode, quality)
                         ?: return@withContext run {
@@ -330,7 +360,7 @@ class HanimeDownloadWorker(
                 DatabaseRepo.HanimeDownload.update(entity)
             }
 
-            if (entity.downloadedLength >= entity.length && entity.length > 0) {
+            if (!shouldRedownload && entity.downloadedLength >= entity.length && entity.length > 0) {
                 DatabaseRepo.HanimeDownload.update(entity.copy(state = DownloadState.Finished))
                 showSuccessNotification()
                 return@withContext Result.success(
@@ -353,7 +383,19 @@ class HanimeDownloadWorker(
                 return@withContext Result.success()
             }
 
-            var downloadedLength = entity.downloadedLength
+            val replacementMode = shouldRedownload
+            val replacementFile = if (replacementMode) {
+                File(file.parentFile, "${file.name}.part-${System.currentTimeMillis()}")
+            } else null
+            val replacementSafUri = if (replacementMode) {
+                SafFileManager.createTemporaryDownloadVideoFileUri(context, videoCode, fileName)
+            } else null
+            if (replacementMode && replacementFile == null && replacementSafUri == null) {
+                throw IOException("Unable to create temporary replacement file")
+            }
+            val replacementLength = if (replacementMode) fetchContentLength()
+                ?: throw IOException("Unable to determine replacement video length") else entity.length
+            var downloadedLength = if (replacementMode) 0L else entity.downloadedLength
             val needRange = downloadedLength > 0
             var raf: RandomAccessFile? = null
             var safPfd: ParcelFileDescriptor? = null
@@ -366,10 +408,12 @@ class HanimeDownloadWorker(
                 workDataOf(DownloadState.STATE to DownloadState.Failed.mask)
             )
             var shouldRetry = false
+            var replacementCommitted = false
 
             try {
-                if (safUri != null) {
-                    safPfd = context.contentResolver.openFileDescriptor(safUri, "rw")
+                if (replacementSafUri != null || safUri != null) {
+                    val writeUri = replacementSafUri ?: safUri
+                    safPfd = context.contentResolver.openFileDescriptor(writeUri!!, "rw")
                     safChannel = safPfd?.fileDescriptor?.let { FileOutputStream(it).channel }
                         ?: throw IOException("Open SAF file failed")
                     if (downloadedLength > safChannel.size()) {
@@ -377,14 +421,14 @@ class HanimeDownloadWorker(
                     }
                     safChannel.position(downloadedLength)
                 } else {
-                    raf = RandomAccessFile(file, "rwd")
+                    raf = RandomAccessFile(replacementFile ?: file, "rwd")
                     if (needRange) raf.seek(downloadedLength)
                 }
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                 var delayTime = 0L
                 var retryCount = 0
 
-                while (downloadedLength < entity.length) {
+                while (downloadedLength < replacementLength) {
                     val requestNeedRange = downloadedLength > 0
                     val requestBuilder = Request.Builder().url(downloadUrl).get()
                     if (requestNeedRange) requestBuilder.header("Range", "bytes=$downloadedLength-")
@@ -414,14 +458,16 @@ class HanimeDownloadWorker(
                             downloadedLength += len
 
                             if (System.currentTimeMillis() - delayTime > RESPONSE_INTERVAL) {
-                                val progress = (downloadedLength * 100 / entity.length).coerceAtMost(100)
+                                val progress = (downloadedLength * 100 / replacementLength).coerceAtMost(100)
                                 setProgress(workDataOf(PROGRESS to progress.toInt()))
                                 updateDownloadNotification(progress.toInt())
-                                DatabaseRepo.HanimeDownload.update(
-                                    entity.copy(downloadedLength = downloadedLength,
-                                        state = DownloadState.Downloading
+                                if (!replacementMode) {
+                                    DatabaseRepo.HanimeDownload.update(
+                                        entity.copy(downloadedLength = downloadedLength,
+                                            state = DownloadState.Downloading
+                                        )
                                     )
-                                )
+                                }
                                 delayTime = System.currentTimeMillis()
                             }
                             len = bodyStream.read(buffer)
@@ -443,10 +489,47 @@ class HanimeDownloadWorker(
                     break
                 }
 
-                if (downloadedLength < entity.length) {
-                    throw IOException("Download incomplete: $downloadedLength/${entity.length}")
+                if (downloadedLength < replacementLength) {
+                    throw IOException("Download incomplete: $downloadedLength/$replacementLength")
                 }
 
+                if (replacementMode) {
+                    // Providers may reject rename while the temporary descriptor is open.
+                    raf?.closeQuietly()
+                    safChannel?.closeQuietly()
+                    safPfd?.closeQuietly()
+                    raf = null
+                    safChannel = null
+                    safPfd = null
+                    val commitRecord: suspend (Uri) -> Boolean = { committedUri ->
+                        if (replacementId >= 0) {
+                            DownloadDatabase.instance.hanimeDownloadDao.commitSourceSwitch(
+                                id = replacementId,
+                                previousUri = previousVideoUri,
+                                quality = quality,
+                                videoUrl = downloadUrl,
+                                videoUri = committedUri.toString(),
+                                length = downloadedLength,
+                            ) > 0
+                        } else {
+                            entity = entity.copy(
+                                videoUri = committedUri.toString(),
+                                videoUrl = downloadUrl,
+                                length = downloadedLength,
+                                downloadedLength = downloadedLength,
+                                state = DownloadState.Finished,
+                            )
+                            DatabaseRepo.HanimeDownload.update(entity) > 0
+                        }
+                    }
+                    val committedUri = if (replacementSafUri != null) {
+                        SafFileManager.commitTemporaryDownloadVideo(context, videoCode, fileName, replacementSafUri, commitRecord)
+                    } else {
+                        commitPrivateReplacement(file, replacementFile!!, commitRecord)
+                    }
+                    if (committedUri == null) throw IOException("Unable to commit replacement download")
+                    replacementCommitted = true
+                }
                 showSuccessNotification()
                 result = Result.success(
                     workDataOf(DownloadState.STATE to DownloadState.Finished.mask)
@@ -482,20 +565,137 @@ class HanimeDownloadWorker(
                 val state = DownloadState.from(
                     result.outputData.getInt(DownloadState.STATE, DownloadState.Unknown.mask)
                 )
-                DatabaseRepo.HanimeDownload.update(
-                    entity.copy(
-                        state = if (shouldRetry) DownloadState.Queued else state,
-                        downloadedLength = downloadedLength
+                if (!replacementMode) {
+                    DatabaseRepo.HanimeDownload.update(
+                        entity.copy(
+                            state = if (shouldRetry) DownloadState.Queued else state,
+                            downloadedLength = downloadedLength
+                        )
                     )
-                )
+                }
                 raf?.closeQuietly()
                 safChannel?.closeQuietly()
                 safPfd?.closeQuietly()
+                if (replacementMode && !replacementCommitted) {
+                    replacementFile?.delete()
+                    SafFileManager.deleteTemporaryDownloadVideo(context, replacementSafUri)
+                }
                 response?.closeQuietly()
                 body?.closeQuietly()
                 bodyStream?.closeQuietly()
             }
             return@withContext result
+        }
+    }
+
+    private suspend fun replaceSource(): Result = com.yenaly.han1meviewer.util.LocalDownloadUpdates.operationMutex.withLock {
+        val dao = DownloadDatabase.instance.hanimeDownloadDao
+        val files = SourceReplacementFiles(context, replacementId)
+        try {
+            if (files.recover(dao, replacementId)) return@withLock Result.success()
+            val record = dao.findById(replacementId) ?: throw IOException("下载记录已不存在")
+            if (record.videoCode != videoCode || record.quality != previousQuality || !record.isDownloaded) {
+                throw IOException("下载记录已变化，原视频保持不变")
+            }
+            if (quality == record.quality || dao.countOtherQuality(videoCode, quality, replacementId) > 0) {
+                throw IOException("目标画质已有下载记录，不能覆盖")
+            }
+            val fileName = createVideoName(hanimeName, quality, videoType)
+            val target = HFileManager.getDownloadVideoFile(context, hanimeName, quality, videoType, videoCode)
+            val safFolder = if (com.yenaly.han1meviewer.Preferences.isUsePrivateStorage) null
+                else SafFileManager.getDownloadVideoFolderSaf(context, videoCode)
+                    ?: throw IOException("下载目录不可访问")
+            if (safFolder?.findFile(fileName) != null || (safFolder == null && target.exists())) {
+                throw IOException("目标视频文件已存在，不能覆盖")
+            }
+            // The exact old MP4 is moved first; the durable journal retains everything needed to restore it.
+            files.backup(record.videoUri)
+            files.planNew(if (safFolder == null) target.toUri() else null, safFolder?.uri, fileName)
+            val uri = if (safFolder != null) {
+                safFolder.createFile("video/mp4", fileName)?.uri ?: throw IOException("无法创建视频文件")
+            } else {
+                target.parentFile?.mkdirs()
+                if (!target.createNewFile()) throw IOException("无法创建视频文件")
+                target.toUri()
+            }
+            files.trackNew(uri)
+            var received = 0L
+            val request = Request.Builder().url(downloadUrl).get().build()
+            ServiceCreator.downloadClient.newCall(request).await().use { response ->
+                if (!response.isSuccessful) throw IOException("视频下载失败 (${response.code})")
+                val mime = response.header("Content-Type").orEmpty().substringBefore(';')
+                if (!mime.startsWith("video/", true) && !mime.equals("application/octet-stream", true)) {
+                    throw IOException("源站未返回视频文件")
+                }
+                val content = response.body ?: throw IOException("源站返回空视频")
+                val expected = content.contentLength().takeIf { it > 0 } ?: throw IOException("视频长度无效")
+                context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
+                    content.byteStream().use { input ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var lastProgress = -1
+                        while (true) {
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                            received += count
+                            val progress = ((received * 100 / expected).coerceIn(0, 100)).toInt()
+                            if (progress != lastProgress) {
+                                updateDownloadNotification(progress)
+                                lastProgress = progress
+                            }
+                        }
+                        output.flush()
+                    }
+                } ?: throw IOException("无法写入下载目录")
+                if (received != expected) throw IOException("Download incomplete")
+            }
+            withContext(kotlinx.coroutines.NonCancellable) {
+                if (dao.commitSourceSwitch(record.id, record.videoUri, quality, downloadUrl, uri.toString(), received) == 0) {
+                    throw IOException("下载记录已变化，无法提交换源")
+                }
+                files.complete()
+            }
+            showSuccessNotification()
+            Result.success(workDataOf(DownloadState.STATE to DownloadState.Finished.mask))
+        } catch (error: Exception) {
+            withContext(kotlinx.coroutines.NonCancellable) {
+                try { files.recover(dao, replacementId) }
+                catch (restoreError: Exception) { Log.e(TAG, "原视频备份已保留，自动恢复失败", restoreError) }
+            }
+            if (error is CancellationException) throw error
+            val reason = error.toDownloadErrorMessage()
+            showFailureNotification(reason)
+            mainScope.launch {
+                GlobalToasts.show(context.getString(R.string.download_task_failed_s_reason_s, hanimeName, reason), level = GlobalToasts.ToastLevel.ERROR)
+            }
+            if (error.isRetryableNetworkError() && runAttemptCount < MAX_WORK_RETRY_COUNT) Result.retry()
+            else Result.failure(workDataOf(DownloadState.STATE to DownloadState.Failed.mask))
+        }
+    }
+    private suspend fun commitPrivateReplacement(
+        target: File,
+        temporary: File,
+        commitRecord: suspend (Uri) -> Boolean,
+    ): Uri? {
+        val backup = File(target.parentFile, "${target.name}.backup-${System.currentTimeMillis()}")
+        if (target.exists() && !target.renameTo(backup)) return null
+        var replacementInstalled = false
+        var recordCommitted = false
+        return try {
+            if (!temporary.renameTo(target)) throw IOException("Unable to install replacement download")
+            replacementInstalled = true
+            recordCommitted = commitRecord(target.toUri())
+            if (!recordCommitted) throw IOException("Unable to update replacement record")
+            if (backup.exists() && !backup.delete()) throw IOException("Unable to remove replacement backup")
+            target.toUri()
+        } catch (_: Exception) {
+            if (recordCommitted) return target.toUri()
+            if (replacementInstalled && target.exists()) target.delete()
+            if (backup.exists() && !backup.renameTo(target)) {
+                Log.e(TAG, "Replacement rollback failed; backup retained at ${backup.absolutePath}")
+            }
+            null
         }
     }
 

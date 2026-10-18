@@ -48,6 +48,7 @@ import com.yenaly.han1meviewer.ui.component.ConfirmDialog
 import com.yenaly.han1meviewer.ui.preview.ComponentPreview
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadEvent
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadSort
+import com.yenaly.han1meviewer.ui.screen.home.download.DownloadSourceRefreshState
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadedMetadata
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadedViewMode
 import com.yenaly.han1meviewer.ui.screen.home.download.downloadSortComparator
@@ -87,6 +88,8 @@ fun DownloadScreen(
     downloadedFlow: StateFlow<List<VideoWithCategories>>,
     downloadedGroupsFlow: StateFlow<List<DownloadGroupEntity>>,
     collapseDownloadedGroup: Boolean,
+    defaultGrouped: Boolean = true,
+    sourceRefresh: DownloadSourceRefreshState = DownloadSourceRefreshState(),
     onBack: () -> Unit,
     onLoadDownloaded: () -> Unit,
     onEvent: (DownloadEvent) -> Unit,
@@ -109,14 +112,24 @@ fun DownloadScreen(
     var pendingBatchMove by remember { mutableStateOf(false) }
     var pendingBatchMoveConfirm by remember { mutableStateOf<Pair<List<VideoWithCategories>, Int>?>(null) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var sort by rememberSaveable { mutableStateOf(DownloadSort.DATE_DESC) }
+    var sort by rememberSaveable {
+        mutableStateOf(
+            DownloadSort.DATE_DESC
+        )
+    }
     var showSearchBar by rememberSaveable { mutableStateOf(false) }
     var viewMode by rememberSaveable { mutableStateOf(DownloadedViewMode.valueOf(Preferences.defaultDownloadView)) }
-    var grouped by rememberSaveable { mutableStateOf(true) }
+    var grouped by rememberSaveable { mutableStateOf(defaultGrouped) }
     var selectedGenre by rememberSaveable { mutableStateOf<String?>(null) }
     val metadata = remember(downloadedItems) {
         downloadedItems.associate { item ->
-            item.video.id to DownloadedMetadata(item.video.author, item.video.genre)
+            item.video.id to DownloadedMetadata(
+                title = item.video.title,
+                coverUrl = item.video.coverUrl,
+                author = item.video.author,
+                genre = item.video.genre,
+                uploadTime = item.video.uploadTime,
+            )
         }
     }
 
@@ -190,6 +203,7 @@ fun DownloadScreen(
         grouped = grouped,
         metadata = metadata,
         selectedGenre = selectedGenre,
+        sourceRefresh = sourceRefresh,
     )
 
     val handleEvent: (DownloadEvent) -> Unit = { event ->
@@ -283,7 +297,9 @@ fun DownloadScreen(
                     multiSelectMode = multiSelectMode,
                     genres = availableGenres,
                     onToggleView = { viewMode = if (viewMode == DownloadedViewMode.LIST) DownloadedViewMode.GRID else DownloadedViewMode.LIST },
-                    onSort = { sort = it },
+                    onSort = {
+                sort = it
+            },
                     onGenre = { selectedGenre = it },
                     onToggleGrouping = { grouped = !grouped },
                     onToggleMultiSelect = { handleEvent(DownloadEvent.OnToggleMultiSelect) },

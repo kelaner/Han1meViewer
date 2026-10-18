@@ -7,6 +7,13 @@ import org.junit.Test
 class DownloadMetadataTest {
 
     @Test
+    fun uploadTime_isReadFromUploadFieldOnly() {
+        assertEquals("2026-03-02", parseDownloadedMetadata("""{"uploadTime":"2026-03-02","addDate":1}""").uploadTime)
+        assertNull(parseDownloadedMetadata("""{"addDate":1790000000000}""").uploadTime)
+        assertNull(parseDownloadedMetadata("""{"uploadTime":null,"addDate":1790000000000}""").uploadTime)
+    }
+
+    @Test
     fun parseDownloadedMetadata_readsNestedArtistFields() {
         val metadata = parseDownloadedMetadata(
             """

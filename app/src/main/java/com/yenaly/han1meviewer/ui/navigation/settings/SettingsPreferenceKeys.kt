@@ -20,6 +20,7 @@ object SettingsPreferenceKeys {
     const val DISABLE_MOBILE_DATA_WARNING = "disable_mobile_data_warning"
     const val COLLAPSE_DOWNLOADED_GROUP = "collapse_downloaded_group"
     const val DOWNLOAD_AUTO_GROUP = "download_auto_group"
+    const val DOWNLOAD_DEFAULT_GROUPED = "download_default_grouped"
     const val DOWNLOAD_GROUP_NAME_FROM_SERIES_NAME = "download_group_name_from_series_name"
     const val DOWNLOAD_GROUP_TRADITIONAL = "download_group_traditional"
     const val DISABLE_PREDICTIVE_BACK = "disable_predictive_back"

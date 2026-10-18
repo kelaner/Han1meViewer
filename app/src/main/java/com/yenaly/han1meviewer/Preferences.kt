@@ -323,6 +323,11 @@ object Preferences {
     val collapseDownloadedGroup: Boolean
         get() = preferenceSp.getBoolean(SettingsPreferenceKeys.COLLAPSE_DOWNLOADED_GROUP,false)
 
+    /** 下載頁進入時是否預設展示分組。 */
+    var downloadDefaultGrouped: Boolean
+        get() = preferenceSp.getBoolean(SettingsPreferenceKeys.DOWNLOAD_DEFAULT_GROUPED, true)
+        set(value) = preferenceSp.edit { putBoolean(SettingsPreferenceKeys.DOWNLOAD_DEFAULT_GROUPED, value) }
+
     /**
      * 下載時是否預設按系列自動建立分組，同時作為下載確認對話框的預設勾選狀態。
      */

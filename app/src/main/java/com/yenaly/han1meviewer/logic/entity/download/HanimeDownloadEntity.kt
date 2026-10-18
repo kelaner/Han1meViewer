@@ -93,9 +93,16 @@ data class HanimeDownloadEntity(
     /** Cached artist.name / artist.genre; null is displayed as unknown. */
     val author: String? = null,
     val genre: String? = null,
+    /** Cached upload date from info.json. */
+    val uploadTime: String? = null,
     /** Includes a completed attempt where info.json or artist fields were missing. */
     @ColumnInfo(defaultValue = "0")
     val metadataResolved: Boolean = false,
+    /** Source qualities observed from the latest origin refresh, encoded as comma-separated labels. */
+    @ColumnInfo(defaultValue = "")
+    val availableQualities: String = "",
+    /** Last successful origin refresh timestamp. */
+    val sourceRefreshedAt: Long? = null,
 ) {
     /**
      * 下载进度

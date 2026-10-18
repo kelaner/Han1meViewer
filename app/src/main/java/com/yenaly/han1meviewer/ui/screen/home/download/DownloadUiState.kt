@@ -28,7 +28,28 @@ data class DownloadUiState(
     val grouped: Boolean = true,
     val metadata: Map<Int, DownloadedMetadata> = emptyMap(),
     val selectedGenre: String? = null,
+    val sourceRefresh: DownloadSourceRefreshState = DownloadSourceRefreshState(),
 )
+
+data class DownloadSourceRefreshState(
+    val loadingVideoId: Int? = null,
+    val results: Map<Int, DownloadSourceAvailability> = emptyMap(),
+    val error: String? = null,
+)
+
+data class DownloadSourceAvailability(
+    val qualities: List<String> = emptyList(),
+    val higherQualities: List<String> = emptyList(),
+    val refreshedAt: Long = 0L,
+)
+
+fun hasHigherQuality(currentQuality: String, availableQualities: List<String>): Boolean {
+    val currentRank = currentQuality.filter(Char::isDigit).toIntOrNull() ?: return false
+    if (currentRank <= 0) return false
+    return availableQualities.any { quality ->
+        (quality.filter(Char::isDigit).toIntOrNull() ?: 0) > currentRank
+    }
+}
 
 /**
  * 下载页面的用户交互事件。
@@ -99,6 +120,18 @@ sealed interface DownloadEvent {
 
     /** 批量移动选中视频到指定分组 */
     data class OnBatchMoveGroup(val videos: List<VideoWithCategories>, val groupId: Int) : DownloadEvent
+
+    /** 重新读取本地 info.json 并更新下载元数据。 */
+    data class OnRefreshMetadata(val video: VideoWithCategories? = null) : DownloadEvent
+
+    /** 从源站刷新视频信息及可用画质。 */
+    data class OnRefreshSource(val video: VideoWithCategories) : DownloadEvent
+
+    /** 请求 UI 展示源画质选择器。 */
+    data class OnRequestSourceSwitch(val video: VideoWithCategories) : DownloadEvent
+
+    /** 选择源站提供的新画质并发起换源下载。 */
+    data class OnSelectSourceQuality(val video: VideoWithCategories, val quality: String) : DownloadEvent
 
     /** 多选模式下打开批量移动分组选择 */
     data object OnBatchMoveRequest : DownloadEvent

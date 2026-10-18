@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.sharp.Create
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -259,6 +261,44 @@ fun GroupRenameDialog(
  * @param onConfirm 确认移动回调
  */
 @OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SourceQualityDialog(
+    title: String,
+    currentQuality: String,
+    qualities: List<String>,
+    loading: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            if (loading) {
+                CircularProgressIndicator()
+            } else if (qualities.isEmpty()) {
+                Text(stringResource(R.string.unknown_error))
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (listOf(currentQuality) + qualities).filter(String::isNotBlank).distinct().forEach { quality ->
+                        TextButton(
+                            onClick = { onSelect(quality) },
+                            enabled = quality != currentQuality,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(if (quality == currentQuality) "$quality（当前）" else quality)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
 @Composable
 fun MoveGroupDialog(
     video: VideoWithCategories?,

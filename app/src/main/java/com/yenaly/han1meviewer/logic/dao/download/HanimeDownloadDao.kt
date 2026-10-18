@@ -98,28 +98,72 @@ abstract class HanimeDownloadDao {
 
     /** Restore local file fields only while the completed snapshot is still current. */
     @Query(
-        "UPDATE HanimeDownloadEntity SET videoUri = :videoUri, coverUri = :coverUri, " +
-                "length = :length, downloadedLength = :length, author = :author, genre = :genre, metadataResolved = 1 " +
+        "UPDATE HanimeDownloadEntity SET videoUri = :videoUri, coverUri = :coverUri, coverUrl = :coverUrl, title = :title, " +
+                "length = :length, downloadedLength = :length, author = :author, genre = :genre, uploadTime = :uploadTime, metadataResolved = 1 " +
                 "WHERE id = :id AND videoUri = :previousUri AND state = ${DownloadState.Mask.FINISHED} " +
                 "AND author IS :previousAuthor AND genre IS :previousGenre AND metadataResolved = :previousResolved"
     )
     abstract suspend fun restoreCompletedFiles(
         id: Int, previousUri: String, previousAuthor: String?, previousGenre: String?, previousResolved: Boolean,
-        videoUri: String, coverUri: String?, length: Long, author: String?, genre: String?,
+        videoUri: String, coverUri: String?, coverUrl: String, title: String, length: Long, author: String?, genre: String?, uploadTime: String?,
     ): Int
 
-    /** Update display fields only; never overwrite download progress or resurrect deleted tasks. */
+    /** Update display metadata only; never overwrite download progress or resurrect deleted tasks. */
     @Query(
-        "UPDATE HanimeDownloadEntity SET author = :author, genre = :genre, metadataResolved = 1 " +
+        "UPDATE HanimeDownloadEntity SET coverUrl = :coverUrl, title = :title, author = :author, genre = :genre, uploadTime = :uploadTime, metadataResolved = 1 " +
                 "WHERE id = :id AND videoUri = :videoUri AND state = ${DownloadState.Mask.FINISHED} " +
                 "AND (:force OR metadataResolved = 0)"
     )
     abstract suspend fun saveMetadata(
-        id: Int, videoUri: String, author: String?, genre: String?, force: Boolean = false,
+        id: Int, videoUri: String, coverUrl: String, title: String, author: String?, genre: String?, uploadTime: String?, force: Boolean = false,
     ): Int
 
     @Query("SELECT * FROM HanimeDownloadEntity WHERE (`videoCode` = :videoCode AND `quality` = :quality) LIMIT 1")
     abstract suspend fun find(videoCode: String, quality: String): HanimeDownloadEntity?
+
+    @Query("SELECT * FROM HanimeDownloadEntity WHERE videoCode = :videoCode AND state = ${DownloadState.Mask.FINISHED}")
+    abstract suspend fun findCompletedByVideoCode(videoCode: String): List<HanimeDownloadEntity>
+
+    @Query("SELECT * FROM HanimeDownloadEntity WHERE id = :id LIMIT 1")
+    abstract suspend fun findById(id: Int): HanimeDownloadEntity?
+
+    @Query("SELECT COUNT(*) FROM HanimeDownloadEntity WHERE videoCode = :videoCode AND quality = :quality COLLATE NOCASE AND id != :excludedId")
+    abstract suspend fun countOtherQuality(videoCode: String, quality: String, excludedId: Int): Int
+
+    /** Persist origin metadata and availability without changing download progress. */
+    @Query(
+        "UPDATE HanimeDownloadEntity SET coverUrl = :coverUrl, coverUri = :coverUri, title = :title, " +
+                "author = COALESCE(:author, author), genre = COALESCE(:genre, genre), uploadTime = COALESCE(:uploadTime, uploadTime), metadataResolved = 1, " +
+                "availableQualities = :qualities, sourceRefreshedAt = :refreshedAt " +
+                "WHERE id = :id AND videoUri = :videoUri AND state = ${DownloadState.Mask.FINISHED}"
+    )
+    abstract suspend fun saveSourceMetadata(
+        id: Int,
+        videoUri: String,
+        coverUrl: String,
+        coverUri: String?,
+        title: String,
+        author: String?,
+        genre: String?,
+        uploadTime: String?,
+        qualities: String,
+        refreshedAt: Long,
+    ): Int
+
+    @Query("UPDATE HanimeDownloadEntity SET videoUri = :restoredUri WHERE id = :id AND videoUri = :previousUri AND state = ${DownloadState.Mask.FINISHED}")
+    abstract suspend fun restoreSourceLocation(id: Int, previousUri: String, restoredUri: String): Int
+
+    /** Commit the new source only after the replacement media has been written successfully. */
+    @Query(
+        "UPDATE HanimeDownloadEntity SET quality = :quality, videoUrl = :videoUrl, videoUri = :videoUri, " +
+                "length = :length, downloadedLength = :length, state = ${DownloadState.Mask.FINISHED}, " +
+                "availableQualities = '', sourceRefreshedAt = NULL " +
+                "WHERE id = :id AND videoUri = :previousUri AND state = ${DownloadState.Mask.FINISHED}"
+    )
+    abstract suspend fun commitSourceSwitch(
+        id: Int, previousUri: String, quality: String, videoUrl: String, videoUri: String,
+        length: Long,
+    ): Int
 
     @Query("SELECT * FROM HanimeDownloadEntity WHERE (`videoCode` = :videoCode) LIMIT 1")
     abstract suspend fun find(videoCode: String): HanimeDownloadEntity?

@@ -38,19 +38,27 @@ class DownloadMetadataPersistenceTest {
             assertNull(legacy.genre)
             assertFalse(legacy.metadataResolved)
 
-            assertEquals(1, dao.saveMetadata(legacy.id, legacy.videoUri, "Legacy author", "Drama"))
+            assertEquals(1, dao.saveMetadata(legacy.id, legacy.videoUri, legacy.coverUrl, legacy.title, "Legacy author", "Drama", null))
             val finished = legacy.copy(id = 42, videoCode = "new", videoUri = "file:///new.mp4",
                 author = null, genre = null, metadataResolved = false)
             val unfinished = finished.copy(id = 43, videoCode = "paused", state = DownloadState.Paused,
                 downloadedLength = 2L)
             dao.insert(finished)
             dao.insert(unfinished)
-            assertEquals(0, dao.saveMetadata(unfinished.id, unfinished.videoUri, "Wrong", "Wrong", force = true))
-            assertEquals(0, dao.saveMetadata(finished.id, "file:///old-location.mp4", "Wrong", "Wrong"))
-            assertEquals(1, dao.saveMetadata(finished.id, finished.videoUri, "First", "Comedy"))
-            assertEquals(0, dao.saveMetadata(finished.id, finished.videoUri, "Wrong", "Wrong"))
+            assertEquals(0, dao.saveMetadata(unfinished.id, unfinished.videoUri, "wrong-cover", "wrong-title", "Wrong", "Wrong", "2026-01-01", force = true))
+            assertEquals(0, dao.saveMetadata(finished.id, "file:///old-location.mp4", "wrong-cover", "wrong-title", "Wrong", "Wrong", "2026-01-01"))
+            assertEquals(1, dao.saveMetadata(finished.id, finished.videoUri, finished.coverUrl, finished.title, "First", "Comedy", null))
+            assertEquals(0, dao.saveMetadata(finished.id, finished.videoUri, "wrong-cover", "wrong-title", "Wrong", "Wrong", "2026-01-01"))
             assertEquals("First", dao.find("new", "720P")?.author)
-            assertEquals(1, dao.saveMetadata(finished.id, finished.videoUri, "Updated", "Fantasy", force = true))
+            assertEquals(1, dao.saveMetadata(finished.id, finished.videoUri, finished.coverUrl, finished.title, "Updated", "Fantasy", "2026-01-02", force = true))
+            assertEquals(1, dao.saveSourceMetadata(
+                finished.id, finished.videoUri, finished.coverUrl, finished.coverUri, finished.title,
+                "Updated", "Fantasy", "2026-01-02", "720P,1080P", 1234L,
+            ))
+            assertEquals(0, dao.commitSourceSwitch(
+                finished.id, "file:///outdated.mp4", "1080P", "new-url", "file:///new-1080.mp4",
+                20L,
+            ))
 
             opened.close()
             database = null
@@ -60,7 +68,22 @@ class DownloadMetadataPersistenceTest {
             assertEquals("Updated", saved.author)
             assertEquals("Fantasy", saved.genre)
             assertTrue(saved.metadataResolved)
-            assertEquals(finished, saved.copy(author = null, genre = null, metadataResolved = false))
+            assertEquals("2026-01-02", saved.uploadTime)
+            assertEquals("720P,1080P", saved.availableQualities)
+            assertEquals(1234L, saved.sourceRefreshedAt)
+            assertEquals(finished, saved.copy(author = null, genre = null, uploadTime = null,
+                availableQualities = "", sourceRefreshedAt = null, metadataResolved = false))
+            assertEquals(1, reopened.hanimeDownloadDao.commitSourceSwitch(
+                saved.id, saved.videoUri, "1080P", "new-url", "file:///new-1080.mp4", 20L,
+            ))
+            val switched = requireNotNull(reopened.hanimeDownloadDao.find("new", "1080P"))
+            assertEquals(saved.id, switched.id)
+            assertEquals(saved.groupId, switched.groupId)
+            assertEquals(saved.addDate, switched.addDate)
+            assertEquals(DownloadState.Finished, switched.state)
+            assertEquals(20L, switched.downloadedLength)
+            assertEquals("", switched.availableQualities)
+            assertNull(switched.sourceRefreshedAt)
             assertEquals(unfinished, reopened.hanimeDownloadDao.find("paused", "720P"))
             val savedLegacy = requireNotNull(reopened.hanimeDownloadDao.find("legacy", "720P"))
             assertEquals("Legacy author", savedLegacy.author)
@@ -74,7 +97,11 @@ class DownloadMetadataPersistenceTest {
 
     private fun openDatabase(context: Context, name: String): DownloadDatabase =
         Room.databaseBuilder(context, DownloadDatabase::class.java, name)
-            .addMigrations(DownloadDatabase.Migration5To6)
+            .addMigrations(
+                DownloadDatabase.Migration5To6,
+                DownloadDatabase.Migration6To7,
+                DownloadDatabase.Migration7To8,
+            )
             .build()
 
     /** Fixed legacy schema fixture, independent of the current Room-generated implementation. */

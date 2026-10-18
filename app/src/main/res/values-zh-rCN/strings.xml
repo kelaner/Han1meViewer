@@ -144,6 +144,8 @@
     <string name="host_or_ipv4">Host 或 IPv4</string>
     <string name="sort_by_date_ascending">时间正排序</string>
     <string name="sort_by_date_descending">时间反排序</string>
+    <string name="sort_by_upload_ascending">上传正排序</string>
+    <string name="sort_by_upload_descending">上传反排序</string>
     <string name="sort_by_alphabet_ascending">字母正排序</string>
     <string name="sort_by_alphabet_descending">字母反排序</string>
     <string name="sort_by_author_ascending">作者正排序</string>

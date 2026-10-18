@@ -4,6 +4,9 @@ package com.yenaly.han1meviewer.ui.screen.home.download
 data class DownloadedMetadata(
     val author: String? = null,
     val genre: String? = null,
+    val title: String? = null,
+    val coverUrl: String? = null,
+    val uploadTime: String? = null,
 ) {
     val displayAuthor: String get() = author?.takeIf { it.isNotBlank() } ?: "未知作者"
     val displayGenre: String get() = genre?.takeIf { it.isNotBlank() } ?: "未知类型"

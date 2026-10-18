@@ -202,6 +202,11 @@ object HanimeDownloadManagerV2 {
         scope.launch { downloadChannel.send(DownloadMsg.Add(args, redownload, waiting)) }
     }
 
+    /** Source replacement is durable WorkManager work and bypasses the in-memory queue. */
+    suspend fun addSourceReplacement(args: HanimeDownloadWorker.Args) {
+        startWork(args, redownload = true)
+    }
+
     /**
      * 恢复下载任务
      */
@@ -285,6 +290,11 @@ object HanimeDownloadManagerV2 {
                     HanimeDownloadWorker.HANIME_NAME to args.hanimeName,
                     HanimeDownloadWorker.VIDEO_CODE to args.videoCode,
                     HanimeDownloadWorker.COVER_URL to args.coverUrl,
+                    HanimeDownloadWorker.UPLOAD_TIME to args.uploadTime,
+                    HanimeDownloadWorker.REPLACEMENT_ID to (args.replacementId ?: -1),
+                    HanimeDownloadWorker.PREVIOUS_QUALITY to args.previousQuality,
+                    HanimeDownloadWorker.PREVIOUS_VIDEO_URI to args.previousVideoUri,
+                    HanimeDownloadWorker.SOURCE_QUALITIES to args.sourceQualities,
                     HanimeDownloadWorker.GROUP_ID to (args.groupId ?: HanimeDownloadWorker.NO_GROUP_ID),
                     HanimeDownloadWorker.REDOWNLOAD to redownload,
                     HanimeDownloadWorker.IN_WAITING_QUEUE to waiting,
@@ -292,8 +302,11 @@ object HanimeDownloadManagerV2 {
                 )
             )
         }.apply {
+            val uniqueName = if (args.replacementId != null) {
+                "source-replace-${args.replacementId}"
+            } else args.videoCode
             workManager.beginUniqueWork(
-                args.videoCode, ExistingWorkPolicy.REPLACE, this
+                uniqueName, if (args.replacementId != null) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.REPLACE, this
             ).enqueue().await()
         }.id
 

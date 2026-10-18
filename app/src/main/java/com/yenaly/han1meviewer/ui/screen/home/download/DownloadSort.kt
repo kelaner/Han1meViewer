@@ -18,6 +18,12 @@ enum class DownloadSort(@StringRes val labelRes: Int) {
     /** 日期正排序（最早在前） */
     DATE_ASC(R.string.sort_by_date_ascending),
 
+    /** 上传时间正排序，缺失上传时间排在末尾。 */
+    UPLOAD_ASC(R.string.sort_by_upload_ascending),
+
+    /** 上传时间反排序，缺失上传时间排在末尾。 */
+    UPLOAD_DESC(R.string.sort_by_upload_descending),
+
     /** 首字母正排序（A-Z，支持英文/中文拼音/日文假名） */
     FIRST_LETTER_ASC(R.string.sort_by_alphabet_ascending),
 
@@ -40,10 +46,24 @@ fun downloadSortComparator(
 ): Comparator<VideoWithCategories> = when (sort) {
     DownloadSort.DATE_DESC -> compareByDescending { it.video.addDate }
     DownloadSort.DATE_ASC -> compareBy { it.video.addDate }
+    DownloadSort.UPLOAD_DESC -> uploadTimeComparator(descending = true)
+    DownloadSort.UPLOAD_ASC -> uploadTimeComparator(descending = false)
     DownloadSort.FIRST_LETTER_ASC -> firstLetterComparator()
     DownloadSort.FIRST_LETTER_DESC -> firstLetterComparator().reversed()
     DownloadSort.AUTHOR_ASC -> authorComparator(metadata, descending = false)
     DownloadSort.AUTHOR_DESC -> authorComparator(metadata, descending = true)
+}
+
+private fun uploadTimeComparator(descending: Boolean): Comparator<VideoWithCategories> = Comparator { a, b ->
+    val aTime = a.video.uploadTime?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+    val bTime = b.video.uploadTime?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+    when {
+        aTime == null && bTime == null -> 0
+        aTime == null -> 1
+        bTime == null -> -1
+        descending -> bTime.compareTo(aTime)
+        else -> aTime.compareTo(bTime)
+    }
 }
 
 private fun authorComparator(
@@ -62,7 +82,7 @@ private fun authorComparator(
             if (descending) -ordered else ordered
         }
     }
-    }
+}
 
 private fun firstLetterComparator(): Comparator<VideoWithCategories> {
     val collator = Collator.getInstance(Locale.CHINESE).apply {

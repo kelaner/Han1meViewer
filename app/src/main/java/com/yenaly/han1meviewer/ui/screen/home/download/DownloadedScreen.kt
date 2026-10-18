@@ -77,6 +77,7 @@ fun DownloadedScreen(
     var pendingRename by remember { mutableStateOf<DownloadHeaderNode?>(null) }
     var pendingMoveVideo by remember { mutableStateOf<VideoWithCategories?>(null) }
     var pendingBatchDeleteVideos by remember { mutableStateOf<List<VideoWithCategories>?>(null) }
+    var pendingSourceVideo by remember { mutableStateOf<VideoWithCategories?>(null) }
 
     CreateGroupDialog(
         visible = uiState.showCreateGroupDialog,
@@ -104,6 +105,15 @@ fun DownloadedScreen(
                 ?.let { onEvent(DownloadEvent.OnDeleteGroup(it)) }
             pendingRename = null
         },
+    )
+
+    if (pendingSourceVideo != null) SourceQualityDialog(
+        title = pendingSourceVideo?.video?.title ?: "换源",
+        currentQuality = pendingSourceVideo?.video?.quality.orEmpty(),
+        qualities = pendingSourceVideo?.let { uiState.sourceRefresh.results[it.video.id]?.qualities.orEmpty() } ?: emptyList(),
+        loading = pendingSourceVideo?.let { uiState.sourceRefresh.loadingVideoId == it.video.id } == true,
+        onDismiss = { pendingSourceVideo = null },
+        onSelect = { quality -> pendingSourceVideo?.let { onEvent(DownloadEvent.OnSelectSourceQuality(it, quality)) }; pendingSourceVideo = null },
     )
 
     MoveGroupDialog(
@@ -182,6 +192,7 @@ fun DownloadedScreen(
                                 onExternalPlayback = { onEvent(DownloadEvent.OnExternalPlayback(node.data)) },
                                 onDeleteVideo = { onEvent(DownloadEvent.OnDeleteDownloadedVideo(node.data)) },
                                 onMoveGroup = { pendingMoveVideo = node.data },
+                                enableLongPressMove = uiState.grouped,
                                 isMultiSelect = uiState.multiSelectMode,
                                 isSelected = node.data.video.id in uiState.selectedVideoIds,
                                 onToggleSelect = { onEvent(DownloadEvent.OnToggleVideoSelection(node.data.video.id)) },
@@ -219,6 +230,20 @@ fun DownloadedScreen(
                                 onExternalPlayback = { onEvent(DownloadEvent.OnExternalPlayback(node.data)) },
                                 onDeleteVideo = { onEvent(DownloadEvent.OnDeleteDownloadedVideo(node.data)) },
                                 onMoveGroup = { pendingMoveVideo = node.data },
+                                onRefreshMetadata = { onEvent(DownloadEvent.OnRefreshMetadata(node.data)) },
+                                 onRefreshSource = { onEvent(DownloadEvent.OnRefreshSource(node.data)) },
+                                 onRequestSourceSwitch = {
+                                      pendingSourceVideo = node.data
+                                      onEvent(DownloadEvent.OnRequestSourceSwitch(node.data))
+                                  },
+                                 higherQualities = node.data.video.availableQualities.split(',').filter { quality ->
+                                      val currentRank = Regex("\\d+").find(node.data.video.quality)?.value?.toIntOrNull() ?: 0
+                                      val candidateRank = Regex("\\d+").find(quality)?.value?.toIntOrNull() ?: 0
+                                      currentRank > 0 && candidateRank > currentRank
+                                  },
+                                  sourceRefreshedAt = node.data.video.sourceRefreshedAt,
+                                 sourceRefreshing = uiState.sourceRefresh.loadingVideoId == node.data.video.id,
+                                enableLongPressMove = uiState.grouped,
                                 isMultiSelect = uiState.multiSelectMode,
                                 isSelected = node.data.video.id in uiState.selectedVideoIds,
                                 onToggleSelect = { onEvent(DownloadEvent.OnToggleVideoSelection(node.data.video.id)) },

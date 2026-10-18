@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +58,10 @@ fun DownloadRouteScreen(
     val viewModel: DownloadViewModel = viewModel()
     val scope = rememberCoroutineScope()
     val dao = remember { DownloadDatabase.instance.hanimeDownloadDao }
+    val sourceRefresh by viewModel.sourceRefresh.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(sourceRefresh.error) {
+        sourceRefresh.error?.let { GlobalToasts.show(it, level = GlobalToasts.ToastLevel.ERROR) }
+    }
     var showVideoNotExistConfirm by remember { mutableStateOf<VideoWithCategories?>(null) }
     var showDeleteVideoConfirm by remember { mutableStateOf<VideoWithCategories?>(null) }
     var showImportDownloadedConfirm by remember { mutableStateOf(false) }
@@ -140,6 +145,11 @@ fun DownloadRouteScreen(
                 viewModel.updateVideoGroup(video.video.videoCode, event.groupId)
             }
 
+            is DownloadEvent.OnRefreshMetadata -> viewModel.refreshDownloadedMetadata(event.video)
+            is DownloadEvent.OnRefreshSource -> viewModel.refreshSource(event.video)
+            is DownloadEvent.OnSelectSourceQuality -> viewModel.switchSource(event.video, event.quality)
+            is DownloadEvent.OnRequestSourceSwitch -> viewModel.refreshSource(event.video, persistMetadata = false)
+
             // 以下事件由 Screen 层自行处理，Route 不关心
             is DownloadEvent.OnToggleGroup,
             is DownloadEvent.OnCreateGroupDialogChange,
@@ -156,6 +166,8 @@ fun DownloadRouteScreen(
         downloadedFlow = viewModel.downloaded,
         downloadedGroupsFlow = viewModel.downloadedGroups,
         collapseDownloadedGroup = Preferences.collapseDownloadedGroup,
+        defaultGrouped = Preferences.downloadDefaultGrouped,
+        sourceRefresh = sourceRefresh,
         onBack = onBack,
         onLoadDownloaded = {
             viewModel.loadAllDownloadedHanime(

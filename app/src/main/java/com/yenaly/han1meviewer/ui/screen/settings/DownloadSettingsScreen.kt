@@ -25,6 +25,7 @@ data class DownloadSettingsUiState(
     val downloadSpeedLimitIndex: Int,
     val downloadSpeedLimitSummary: String,
     val downloadAutoGroup: Boolean = true,
+    val defaultGrouped: Boolean = true,
     val defaultDownloadView: String = "LIST",
 )
 
@@ -43,6 +44,7 @@ fun DownloadSettingsScreen(
     onDownloadCountLimitChange: (Int) -> Unit,
     onDownloadSpeedLimitChange: (Int) -> Unit,
     onDownloadAutoGroupChange: (Boolean) -> Unit,
+    onDefaultGroupedChange: (Boolean) -> Unit = {},
     onDefaultDownloadViewChange: (String) -> Unit = {},
 ) {
     var showDefaultViewDialog by rememberSaveable { mutableStateOf(false) }
@@ -64,6 +66,16 @@ fun DownloadSettingsScreen(
                 summary = state.downloadPathSummary,
                 iconRes = R.drawable.baseline_path_24,
                 onClick = onOpenDownloadPath,
+            )
+        }
+
+        item {
+            SettingSwitchItem(
+                title = "默认是否展示分组",
+                summary = "进入下载页时默认显示分组视图",
+                checked = state.defaultGrouped,
+                iconRes = R.drawable.ic_baseline_fold_24,
+                onCheckedChange = onDefaultGroupedChange,
             )
         }
 

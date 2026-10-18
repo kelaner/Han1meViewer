@@ -223,6 +223,65 @@ object SafFileManager {
         return target.uri
     }
 
+    /** Creates a same-directory temporary video document for replacement downloads. */
+    fun createTemporaryDownloadVideoFileUri(
+        context: Context,
+        videoCode: String,
+        fileName: String,
+    ): Uri? {
+        if (!isSafReady()) return null
+        val dir = getDownloadVideoFolderSaf(context, videoCode) ?: return null
+        val tempName = "$fileName.part-${System.currentTimeMillis()}"
+        return dir.createFile("application/octet-stream", tempName)?.uri
+    }
+
+    /**
+     * Commits a completed temporary SAF video by swapping it with the old target.
+     * The old document is kept as a rollback backup until the new document is renamed.
+     */
+    suspend fun commitTemporaryDownloadVideo(
+        context: Context,
+        videoCode: String,
+        fileName: String,
+        temporaryUri: Uri,
+        commitRecord: suspend (Uri) -> Boolean,
+    ): Uri? {
+        val dir = getDownloadVideoFolderSaf(context, videoCode) ?: return null
+        val temp = DocumentFile.fromSingleUri(context, temporaryUri) ?: return null
+        if (!temp.exists()) return null
+        val old = dir.findFile(fileName)
+        val backupName = "$fileName.backup-${System.currentTimeMillis()}"
+        if (old != null && !old.renameTo(backupName)) return null
+        var replacement: DocumentFile? = null
+        var recordCommitted = false
+        try {
+            if (!temp.renameTo(fileName)) throw IOException("Unable to commit SAF replacement")
+            replacement = dir.findFile(fileName) ?: throw IOException("Committed SAF video is missing")
+            recordCommitted = commitRecord(replacement.uri)
+            if (!recordCommitted) throw IOException("Unable to update replacement record")
+            if (old != null && !old.delete()) throw IOException("Unable to remove SAF backup")
+            return replacement.uri
+        } catch (_: Exception) {
+            if (recordCommitted) return replacement?.uri
+            replacement?.delete()
+            if (old != null && !old.renameTo(fileName)) {
+                Log.e("SafFileManager", "Replacement rollback failed; backup retained at ${old.uri}")
+            }
+            return null
+        }
+    }
+
+    fun deleteTemporaryDownloadVideo(context: Context, temporaryUri: Uri?) {
+        temporaryUri?.let { DocumentFile.fromSingleUri(context, it)?.delete() }
+    }
+
+    fun deleteDownloadUri(context: Context, uriString: String) {
+        runCatching { uriString.toUri() }.getOrNull()?.let { uri ->
+            if (uri.scheme == "file") File(uri.path.orEmpty()).delete()
+            else DocumentFile.fromSingleUri(context, uri)?.delete()
+        }
+    }
+
     /**
      * 根据文件扩展名获取对应的MIME类型
      *
@@ -429,8 +488,9 @@ object SafFileManager {
                     previousAuthor = previous.author, previousGenre = previous.genre,
                     previousResolved = previous.metadataResolved,
                     videoUri = restored.videoUri, coverUri = restored.coverUri,
+                    coverUrl = restored.coverUrl, title = restored.title,
                     length = restored.length, author = restored.author, genre = restored.genre,
-                ) > 0
+                    uploadTime = restored.uploadTime,                ) > 0
             },
             onItemProgress = onItemProgress,
             onProgress = onProgress,
