@@ -163,7 +163,6 @@
     <string name="download_all_genres">全部类型</string>
     <string name="download_unknown_genre">未知类型</string>
     <string name="download_unknown_author">未知作者</string>
-    <string name="download_duration_pending">时长：待补充</string>
     <string name="search_downloaded_hint">搜尋已下載影片…</string>
     <string name="h_keyframe_settings">關鍵H幀設定</string>
     <string name="h_keyframes_enable">關鍵H幀，啟動！</string>
