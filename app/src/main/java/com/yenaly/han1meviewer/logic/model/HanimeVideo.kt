@@ -111,9 +111,9 @@ data class HanimeVideo(
 
     @Serializable
     data class Artist(
-        val name: String,
-        val avatarUrl: String,
-        val genre: String,
+        val name: String = "",
+        val avatarUrl: String = "",
+        val genre: String = "",
         @Transient val post: POST? = null,
     ) {
         val isSubscribed: Boolean get() = post != null && post.isSubscribed

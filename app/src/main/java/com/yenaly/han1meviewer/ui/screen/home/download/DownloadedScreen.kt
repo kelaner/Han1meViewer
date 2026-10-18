@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -106,13 +109,32 @@ fun DownloadedScreen(
 
     if (uiState.downloadedNodes.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            EmptyContent(
-                hint = stringResource(R.string.empty_content),
-                subHint = stringResource(R.string.downloaded),
-            )
+            EmptyContent(hint = stringResource(R.string.empty_content), subHint = stringResource(R.string.downloaded))
         }
         return
     }
+
+    if (uiState.viewMode == DownloadedViewMode.ALL) {
+        val videos = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>()
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(160.dp), modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(videos, key = { "all-${it.data.video.id}" }) { node ->
+                DownloadedVideoCard(
+                    item = node.data, metadata = uiState.metadata[node.data.video.id], compact = true,
+                    onOpenVideo = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnOpenDownloadedVideo(node.data)) },
+                    onLocalPlayback = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnLocalPlayback(node.data)) },
+                    onExternalPlayback = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnExternalPlayback(node.data)) },
+                    onDeleteVideo = { if (!uiState.multiSelectMode) onEvent(DownloadEvent.OnDeleteDownloadedVideo(node.data)) },
+                    onMoveGroup = { if (!uiState.multiSelectMode) pendingMoveVideo = node.data },
+                    isMultiSelect = uiState.multiSelectMode, isSelected = node.data.video.id in uiState.selectedVideoIds,
+                    onToggleSelect = { onEvent(DownloadEvent.OnToggleVideoSelection(node.data.video.id)) },
+                )
+            }
+        }
+    } else {
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -147,6 +169,7 @@ fun DownloadedScreen(
                         val isSelected = videoId in uiState.selectedVideoIds
                         DownloadedVideoCard(
                             item = node.data,
+                            metadata = uiState.metadata[node.data.video.id],
                             onOpenVideo = {
                                 if (!uiState.multiSelectMode) {
                                     onEvent(DownloadEvent.OnOpenDownloadedVideo(node.data))
@@ -215,6 +238,26 @@ fun DownloadedScreen(
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+    }
+    }
+
+    if (uiState.viewMode == DownloadedViewMode.ALL && uiState.multiSelectMode) {
+        val selectedVideos = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>()
+            .filter { it.data.video.id in uiState.selectedVideoIds }.map { it.data }
+        BatchActionBar(
+            selectedCount = selectedVideos.size,
+            totalCount = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>().size,
+            onToggleSelectAll = {
+                val nodes = uiState.downloadedNodes.filterIsInstance<DownloadItemNode>()
+                if (selectedVideos.size == nodes.size) nodes.forEach { onEvent(DownloadEvent.OnToggleVideoSelection(it.data.video.id)) }
+                else nodes.filter { it.data.video.id !in uiState.selectedVideoIds }
+                    .forEach { onEvent(DownloadEvent.OnToggleVideoSelection(it.data.video.id)) }
+            },
+            onExitMultiSelect = { onEvent(DownloadEvent.OnToggleMultiSelect) },
+            onDeleteSelected = { if (selectedVideos.isNotEmpty()) pendingBatchDeleteVideos = selectedVideos },
+            onMoveSelected = { if (selectedVideos.isNotEmpty()) onEvent(DownloadEvent.OnBatchMoveRequest) },
+            modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
+        )
     }
 
     pendingBatchDeleteVideos?.let { videos ->

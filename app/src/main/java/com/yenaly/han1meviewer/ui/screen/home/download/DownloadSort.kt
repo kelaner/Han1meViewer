@@ -23,17 +23,46 @@ enum class DownloadSort(@StringRes val labelRes: Int) {
 
     /** 首字母反排序（Z-A） */
     FIRST_LETTER_DESC(R.string.sort_by_alphabet_descending),
+
+    /** 作者正排序，缺少作者的信息排在末尾 */
+    AUTHOR_ASC(R.string.sort_by_author_ascending),
+
+    /** 作者反排序，缺少作者的信息排在末尾 */
+    AUTHOR_DESC(R.string.sort_by_author_descending),
 }
 
 /**
  * 生成对应排序方式的比较器。
  */
-fun downloadSortComparator(sort: DownloadSort): Comparator<VideoWithCategories> = when (sort) {
+fun downloadSortComparator(
+    sort: DownloadSort,
+    metadata: Map<Int, DownloadedMetadata> = emptyMap(),
+): Comparator<VideoWithCategories> = when (sort) {
     DownloadSort.DATE_DESC -> compareByDescending { it.video.addDate }
     DownloadSort.DATE_ASC -> compareBy { it.video.addDate }
     DownloadSort.FIRST_LETTER_ASC -> firstLetterComparator()
     DownloadSort.FIRST_LETTER_DESC -> firstLetterComparator().reversed()
+    DownloadSort.AUTHOR_ASC -> authorComparator(metadata, descending = false)
+    DownloadSort.AUTHOR_DESC -> authorComparator(metadata, descending = true)
 }
+
+private fun authorComparator(
+    metadata: Map<Int, DownloadedMetadata>,
+    descending: Boolean,
+): Comparator<VideoWithCategories> = Comparator { a, b ->
+    val aAuthor = metadata[a.video.id]?.author?.takeIf { it.isNotBlank() }
+    val bAuthor = metadata[b.video.id]?.author?.takeIf { it.isNotBlank() }
+    when {
+        aAuthor == null && bAuthor == null -> 0
+        aAuthor == null -> 1
+        bAuthor == null -> -1
+        else -> {
+            val compared = Collator.getInstance(Locale.CHINESE).compare(aAuthor, bAuthor)
+            val ordered = if (compared != 0) compared else a.video.title.compareTo(b.video.title)
+            if (descending) -ordered else ordered
+        }
+    }
+    }
 
 private fun firstLetterComparator(): Comparator<VideoWithCategories> {
     val collator = Collator.getInstance(Locale.CHINESE).apply {

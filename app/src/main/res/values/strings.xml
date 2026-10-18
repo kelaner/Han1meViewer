@@ -155,6 +155,14 @@
     <string name="sort_by_date_descending">時間反排序</string>
     <string name="sort_by_alphabet_ascending">字母正排序</string>
     <string name="sort_by_alphabet_descending">字母反排序</string>
+    <string name="sort_by_author_ascending">作者正排序</string>
+    <string name="sort_by_author_descending">作者反排序</string>
+    <string name="download_view_groups">分组视图</string>
+    <string name="download_view_all">全部视频</string>
+    <string name="download_genre_filter">作品类型</string>
+    <string name="download_all_genres">全部类型</string>
+    <string name="download_unknown_genre">未知类型</string>
+    <string name="download_unknown_author">未知作者</string>
     <string name="search_downloaded_hint">搜尋已下載影片…</string>
     <string name="h_keyframe_settings">關鍵H幀設定</string>
     <string name="h_keyframes_enable">關鍵H幀，啟動！</string>

@@ -31,6 +31,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -47,6 +48,8 @@ import com.yenaly.han1meviewer.ui.component.ConfirmDialog
 import com.yenaly.han1meviewer.ui.preview.ComponentPreview
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadEvent
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadSort
+import com.yenaly.han1meviewer.ui.screen.home.download.DownloadedMetadata
+import com.yenaly.han1meviewer.ui.screen.home.download.DownloadedViewMode
 import com.yenaly.han1meviewer.ui.screen.home.download.downloadSortComparator
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadUiState
 import com.yenaly.han1meviewer.ui.screen.home.download.DownloadedScreen
@@ -109,27 +112,46 @@ fun DownloadScreen(
     var sort by rememberSaveable { mutableStateOf(DownloadSort.DATE_DESC) }
     var showSearchBar by rememberSaveable { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
+    var showGenreMenu by remember { mutableStateOf(false) }
+    var viewMode by rememberSaveable { mutableStateOf(DownloadedViewMode.GROUPS) }
+    var selectedGenre by rememberSaveable { mutableStateOf<String?>(null) }
+    var metadata by remember { mutableStateOf<Map<Int, DownloadedMetadata>>(emptyMap()) }
+    val context = LocalContext.current
+
+    LaunchedEffect(downloadedItems.map { it.video.id to it.video.videoCode }) {
+        val loaded = loadDownloadedMetadata(context, downloadedItems.map { it.video.videoCode })
+        metadata = downloadedItems.associate { item ->
+            item.video.id to (loaded[item.video.videoCode] ?: DownloadedMetadata())
+        }
+    }
 
     val displayGroups = downloadedGroups.toDisplayGroups()
+    val availableGenres = remember(downloadedItems, metadata) {
+        downloadedItems.map { metadata[it.video.id]?.displayGenre ?: "未知类型" }.distinct().sorted()
+    }
 
     val filteredDownloadedItems =
-        remember(downloadedItems, searchQuery, sort) {
-            val filtered = if (searchQuery.isBlank()) {
-                downloadedItems
-            } else {
+        remember(downloadedItems, searchQuery, sort, metadata, selectedGenre) {
+            val filtered = downloadedItems.filter { item ->
+                val matchesGenre = selectedGenre == null ||
+                    (metadata[item.video.id]?.displayGenre ?: "未知类型") == selectedGenre
+                if (!matchesGenre) return@filter false
+                if (searchQuery.isBlank()) return@filter true
                 val normalizedQuery = searchQuery.toSimplified()
-                downloadedItems.filter {
-                    it.video.title.toSimplified().contains(normalizedQuery, ignoreCase = true) ||
-                        it.video.videoCode.contains(searchQuery, ignoreCase = true)
-                }
+                item.video.title.toSimplified().contains(normalizedQuery, ignoreCase = true) ||
+                    item.video.videoCode.contains(searchQuery, ignoreCase = true)
             }
-            filtered.sortedWith(downloadSortComparator(sort))
+            filtered.sortedWith(downloadSortComparator(sort, metadata))
         }
 
     val downloadedNodes =
-        remember(filteredDownloadedItems, displayGroups, collapseDownloadedGroup, downloadedHeaderNodes, downloadedGroupExpandedState, searchQuery) {
+        remember(filteredDownloadedItems, displayGroups, collapseDownloadedGroup, downloadedHeaderNodes, downloadedGroupExpandedState, searchQuery, viewMode) {
             val groupIdToNameMap = displayGroups.associate { it.id to it.name }
             when {
+                viewMode == DownloadedViewMode.ALL -> {
+                    downloadedHeaderNodes = emptyList()
+                    filteredDownloadedItems.map { DownloadItemNode(it, it.video.groupId) }
+                }
                 filteredDownloadedItems.isEmpty() -> {
                     downloadedHeaderNodes = emptyList()
                     emptyList()
@@ -163,6 +185,9 @@ fun DownloadScreen(
         showCreateGroupDialog = showCreateGroupDialog,
         multiSelectMode = multiSelectMode,
         selectedVideoIds = selectedVideoIds,
+        viewMode = viewMode,
+        metadata = metadata,
+        selectedGenre = selectedGenre,
     )
 
     val handleEvent: (DownloadEvent) -> Unit = { event ->
@@ -268,6 +293,22 @@ fun DownloadScreen(
                                         showSortMenu = false
                                     },
                                 )
+                            }
+                        }
+                    }
+                    Box {
+                        FilledIconButton(onClick = { viewMode = if (viewMode == DownloadedViewMode.GROUPS) DownloadedViewMode.ALL else DownloadedViewMode.GROUPS }) {
+                            Icon(painter = painterResource(R.drawable.baseline_format_list_bulleted_24), contentDescription = stringResource(if (viewMode == DownloadedViewMode.GROUPS) R.string.download_view_all else R.string.download_view_groups))
+                        }
+                    }
+                    Box {
+                        FilledIconButton(onClick = { showGenreMenu = true }) {
+                            Text(stringResource(R.string.download_genre_filter))
+                        }
+                        DropdownMenu(expanded = showGenreMenu, onDismissRequest = { showGenreMenu = false }) {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.download_all_genres)) }, onClick = { selectedGenre = null; showGenreMenu = false })
+                            availableGenres.forEach { genre ->
+                                DropdownMenuItem(text = { Text(genre) }, onClick = { selectedGenre = genre; showGenreMenu = false })
                             }
                         }
                     }

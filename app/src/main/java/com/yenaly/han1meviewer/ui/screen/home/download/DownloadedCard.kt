@@ -131,6 +131,8 @@ fun DownloadGroupHeader(
 @Composable
 fun DownloadedVideoCard(
     item: VideoWithCategories,
+    metadata: DownloadedMetadata? = null,
+    compact: Boolean = false,
     onOpenVideo: () -> Unit,
     onLocalPlayback: () -> Unit,
     onExternalPlayback: () -> Unit,
@@ -179,7 +181,7 @@ fun DownloadedVideoCard(
                         placeholder = painterResource(R.drawable.h_chan_loading),
                         error = painterResource(R.drawable.h_chan_load_failed),
                         modifier = Modifier
-                            .width(150.dp)
+                            .width(if (compact) 110.dp else 150.dp)
                             .fillMaxHeight()
                             .clip(RoundedCornerShape(18.dp)),
                         contentScale = ContentScale.Crop,
@@ -213,6 +215,13 @@ fun DownloadedVideoCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = metadata?.displayAuthor ?: "未知作者",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
