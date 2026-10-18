@@ -15,7 +15,11 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.isToggleable
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.hasContentDescription
+import com.yenaly.han1meviewer.logic.DatabaseRepo
+import kotlinx.coroutines.runBlocking
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import org.junit.Before
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -38,10 +42,24 @@ import org.junit.Test
 
 class DownloadLibraryUiTest {
     @get:Rule
-    val compose = createComposeRule()
+    val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
+
+    @Before
+    fun useApplicationTheme() {
+        compose.runOnUiThread { compose.activity.setTheme(R.style.Theme_Hanime) }
+    }
 
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private fun label(id: Int) = context.getString(id)
+
+    private fun screenshot(name: String) {
+        compose.waitForIdle()
+        val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        java.io.File(context.cacheDir, "$name.png").outputStream().use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        bitmap.recycle()
+    }
 
     private val videos = (1..2).map { id ->
         VideoWithCategories(
@@ -80,21 +98,74 @@ class DownloadLibraryUiTest {
         var downloaded by mutableStateOf(false)
         compose.setContent {
             MaterialTheme {
-                VideoCardItem(
-                    videoItem = fakeVideosItem,
-                    isDownloaded = downloaded,
-                    isWatched = true,
-                    onClickVideosItem = {},
-                    onLongClickVideosItem = { _, _ -> },
-                )
+                Box(Modifier.width(160.dp)) {
+                    VideoCardItem(
+                        videoItem = fakeVideosItem.copy(coverUrl = ""),
+                        isDownloaded = downloaded,
+                        isWatched = true,
+                        onClickVideosItem = {},
+                        onLongClickVideosItem = { _, _ -> },
+                    )
+                }
             }
         }
-        compose.onNodeWithText(label(R.string.downloaded)).assertDoesNotExist()
+        val watchedBounds = compose.onNodeWithText(label(R.string.played), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithContentDescription(label(R.string.downloaded), useUnmergedTree = true).assertDoesNotExist()
         compose.runOnIdle { downloaded = true }
-        compose.onNodeWithText(label(R.string.downloaded)).assertIsDisplayed()
-        compose.onNodeWithText(label(R.string.played)).assertIsDisplayed()
+        val badge = compose.onNodeWithContentDescription(label(R.string.downloaded), useUnmergedTree = true)
+        badge.assertIsDisplayed()
+        compose.onNodeWithText(label(R.string.played), useUnmergedTree = true).assertIsDisplayed()
+        assertEquals(watchedBounds, compose.onNodeWithText(label(R.string.played), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot)
+        assertTrue(badge.fetchSemanticsNode().boundsInRoot.right < watchedBounds.left)
+        assertTrue(badge.fetchSemanticsNode().boundsInRoot.top >= 0)
+        screenshot("downloaded-and-played")
         compose.runOnIdle { downloaded = false }
-        compose.onNodeWithText(label(R.string.downloaded)).assertDoesNotExist()
+        compose.onNodeWithContentDescription(label(R.string.downloaded), useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun cardObservesCompletedDownloadsAcrossQualityChanges() {
+        val code = "badge-regression-${System.nanoTime()}"
+        val video = videos.first().video.copy(id = 0, videoCode = code, state = DownloadState.Paused)
+        fun waitForBadge(expected: Boolean) {
+            compose.waitUntil(5_000) {
+                compose.onAllNodes(hasContentDescription(label(R.string.downloaded)))
+                    .fetchSemanticsNodes().isNotEmpty() == expected
+            }
+        }
+        runBlocking {
+            DatabaseRepo.HanimeDownload.insertDefaultGroup()
+            DatabaseRepo.HanimeDownload.insert(video)
+        }
+        try {
+            compose.setContent {
+                MaterialTheme {
+                    VideoCardItem(
+                        videoItem = fakeVideosItem.copy(videoCode = code, coverUrl = ""),
+                        isWatched = true,
+                        onClickVideosItem = {},
+                        onLongClickVideosItem = { _, _ -> },
+                    )
+                }
+            }
+            waitForBadge(false)
+            runBlocking {
+                DatabaseRepo.HanimeDownload.insert(video.copy(quality = "1080P", state = DownloadState.Finished))
+            }
+            waitForBadge(true)
+            compose.onNodeWithText(label(R.string.played), useUnmergedTree = true).assertIsDisplayed()
+            runBlocking { DatabaseRepo.HanimeDownload.delete(code, "1080P") }
+            waitForBadge(false)
+            runBlocking {
+                val paused = requireNotNull(DatabaseRepo.HanimeDownload.find(code, "720P"))
+                DatabaseRepo.HanimeDownload.update(paused.copy(state = DownloadState.Finished))
+            }
+            waitForBadge(true)
+            runBlocking { DatabaseRepo.HanimeDownload.delete(code) }
+            waitForBadge(false)
+        } finally {
+            runBlocking { DatabaseRepo.HanimeDownload.delete(code) }
+        }
     }
 
     @Test
@@ -203,11 +274,12 @@ class DownloadLibraryUiTest {
         var grouped by mutableStateOf(true)
         var multiSelect by mutableStateOf(false)
         val actions = mutableListOf<String>()
+        var width by mutableStateOf(180.dp)
         compose.setContent {
             MaterialTheme {
-                Box(Modifier.width(320.dp)) {
+                Box(Modifier.width(width)) {
                     DownloadToolbar(
-                        width = 320.dp,
+                        width = width,
                         viewMode = mode,
                         grouped = grouped,
                         multiSelectMode = multiSelect,
@@ -227,11 +299,13 @@ class DownloadLibraryUiTest {
                 }
             }
         }
-        compose.onNodeWithText("一键更新").assertIsDisplayed().performClick()
-        assertTrue(
-            compose.onNodeWithText("一键更新").fetchSemanticsNode().boundsInRoot.right <=
-                compose.onNodeWithContentDescription("更多").fetchSemanticsNode().boundsInRoot.left
-        )
+        compose.onNodeWithContentDescription("一键更新").assertDoesNotExist()
+        compose.onNodeWithContentDescription("更多").performClick()
+        val order = listOf("切换多列视图", "排序", "类型分类", "取消分组展示", "多选操作", "搜索", "创建新分组", "一键更新", "读取下载目录")
+        val menuBounds = order.map { compose.onNodeWithText(it).assertIsDisplayed().fetchSemanticsNode().boundsInRoot }
+        assertTrue(menuBounds.zipWithNext().all { (a, b) -> a.bottom <= b.top })
+        screenshot("download-actions-menu")
+        compose.onNodeWithText("一键更新").performClick()
         compose.onNodeWithContentDescription("更多").performClick()
         compose.onNodeWithText("切换多列视图").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("更多").performClick()
@@ -261,6 +335,15 @@ class DownloadLibraryUiTest {
             assertTrue(!grouped)
             assertTrue(multiSelect)
             assertEquals(listOf("update", "sort:$sort", "genre:Regression genre", "search", "create", "read"), actions)
+            width = 640.dp
         }
+        compose.onNodeWithContentDescription("更多").assertDoesNotExist()
+        compose.onNodeWithText("一键更新").assertDoesNotExist()
+        val wideOrder = listOf("切换列表视图", "排序", "类型分类", "分组展示", "退出多选", "搜索", "创建新分组", "一键更新", "读取下载目录")
+        val iconBounds = wideOrder.map { compose.onNodeWithContentDescription(it).assertIsDisplayed().fetchSemanticsNode().boundsInRoot }
+        assertTrue(iconBounds.zipWithNext().all { (a, b) -> a.right <= b.left })
+        screenshot("download-actions-icons")
+        compose.onNodeWithContentDescription("一键更新").performClick()
+        compose.runOnIdle { assertEquals(2, actions.count { it == "update" }) }
     }
 }

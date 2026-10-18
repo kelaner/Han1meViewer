@@ -10,7 +10,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,7 +27,12 @@ internal fun downloadDirectActionCount(widthDp: Int, actionCount: Int): Int {
     return if (slots >= actionCount) actionCount else (slots - 1).coerceAtLeast(0)
 }
 
-private data class DownloadAction(val label: String, val icon: Int, val run: () -> Unit)
+private data class DownloadAction(
+    val label: String,
+    val icon: Int,
+    val enabled: Boolean = true,
+    val run: () -> Unit,
+)
 
 @Composable
 internal fun DownloadToolbar(
@@ -52,31 +56,26 @@ internal fun DownloadToolbar(
     var menu by remember { mutableStateOf<String?>(null) }
     val actions = listOf(
         DownloadAction(if (viewMode == DownloadedViewMode.LIST) "切换多列视图" else "切换列表视图",
-            if (viewMode == DownloadedViewMode.LIST) R.drawable.baseline_grid_24 else R.drawable.baseline_format_list_bulleted_24, onToggleView),
+            if (viewMode == DownloadedViewMode.LIST) R.drawable.baseline_grid_24 else R.drawable.baseline_format_list_bulleted_24, run = onToggleView),
         DownloadAction("排序", R.drawable.baseline_sort_24) { menu = "sort" },
         DownloadAction("类型分类", R.drawable.baseline_advanced_search_24) { menu = "genre" },
-        DownloadAction(if (grouped) "取消分组展示" else "分组展示", R.drawable.ic_baseline_fold_24, onToggleGrouping),
-        DownloadAction(if (multiSelectMode) "退出多选" else "多选操作", R.drawable.baseline_edit_24, onToggleMultiSelect),
-        DownloadAction("搜索", R.drawable.ic_baseline_search_24, onSearch),
-        DownloadAction("创建新分组", R.drawable.baseline_add_24, onCreateGroup),
-        DownloadAction("读取下载目录", R.drawable.ic_baseline_download_24, onReadDirectory),
+        DownloadAction(if (grouped) "取消分组展示" else "分组展示", R.drawable.ic_baseline_fold_24, run = onToggleGrouping),
+        DownloadAction(if (multiSelectMode) "退出多选" else "多选操作", R.drawable.baseline_edit_24, run = onToggleMultiSelect),
+        DownloadAction("搜索", R.drawable.ic_baseline_search_24, run = onSearch),
+        DownloadAction("创建新分组", R.drawable.baseline_add_24, run = onCreateGroup),
+        DownloadAction(if (updating) "更新中" else "一键更新", R.drawable.ic_baseline_update_24,
+            enabled = updateEnabled, run = onUpdateSources),
+        DownloadAction("读取下载目录", R.drawable.ic_baseline_download_24, run = onReadDirectory),
     )
-    val directCount = downloadDirectActionCount((width.value - 88).toInt(), actions.size)
-    val updateButton: @Composable () -> Unit = {
-        TextButton(onClick = onUpdateSources, enabled = updateEnabled) {
-            Text(if (updating) "更新中" else "一键更新")
-        }
-    }
+    val directCount = downloadDirectActionCount(width.value.toInt(), actions.size)
     Box {
         Row {
-            actions.take(directCount).forEachIndexed { index, action ->
-                if (directCount == actions.size && index == directCount - 1) updateButton()
-                IconButton(onClick = action.run, modifier = Modifier.size(48.dp)) {
+            actions.take(directCount).forEach { action ->
+                IconButton(onClick = action.run, enabled = action.enabled, modifier = Modifier.size(48.dp)) {
                     Icon(painterResource(action.icon), contentDescription = action.label)
                 }
             }
             if (directCount < actions.size) {
-                updateButton()
                 IconButton(onClick = { menu = "more" }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.MoreVert, contentDescription = "更多")
                 }
@@ -84,7 +83,7 @@ internal fun DownloadToolbar(
         }
         DropdownMenu(expanded = menu == "more", onDismissRequest = { menu = null }) {
             actions.drop(directCount).forEach { action ->
-                DropdownMenuItem(text = { Text(action.label) }, onClick = {
+                DropdownMenuItem(text = { Text(action.label) }, enabled = action.enabled, onClick = {
                     menu = null
                     action.run()
                 }, leadingIcon = { Icon(painterResource(action.icon), contentDescription = null) })

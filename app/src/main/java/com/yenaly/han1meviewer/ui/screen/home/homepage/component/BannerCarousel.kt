@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.yenaly.han1meviewer.R
 import com.yenaly.han1meviewer.ui.component.AutoScrollEffect
+import com.yenaly.han1meviewer.ui.component.DownloadedBadge
 import com.yenaly.han1meviewer.ui.component.PageIndicator
 import com.yenaly.han1meviewer.ui.preview.ComponentPreview
 import com.yenaly.han1meviewer.ui.preview.fakeHeroItems
@@ -107,6 +108,12 @@ fun BannerCarousel(
                                 )
                             )
                     )
+                    item.videoCode?.takeIf { it.isNotBlank() }?.let { videoCode ->
+                        DownloadedBadge(
+                            videoCode = videoCode,
+                            modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                        )
+                    }
                     Column(
                         modifier = Modifier
                             .align(Alignment.BottomStart)

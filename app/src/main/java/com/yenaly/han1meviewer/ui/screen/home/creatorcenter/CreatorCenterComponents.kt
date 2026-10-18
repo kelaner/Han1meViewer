@@ -32,6 +32,7 @@ import coil3.compose.AsyncImage
 import com.yenaly.han1meviewer.R
 import com.yenaly.han1meviewer.logic.model.CreatorSort
 import com.yenaly.han1meviewer.logic.model.CreatorUploadingItem
+import com.yenaly.han1meviewer.ui.component.DownloadedBadge
 import com.yenaly.han1meviewer.ui.preview.ComponentPreview
 
 /**
@@ -103,9 +104,15 @@ internal fun CreatorUploadingCard(
                     error = painterResource(R.drawable.h_chan_load_failed),
                     fallback = painterResource(R.drawable.h_chan_load_failed),
                 )
+                if (item.videoCode.isNotBlank()) {
+                    DownloadedBadge(
+                        videoCode = item.videoCode,
+                        modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                    )
+                }
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopStart)
+                        .align(Alignment.TopEnd)
                         .padding(10.dp)
                         .background(
                             color = statusInfo.color.copy(alpha = 0.16f),

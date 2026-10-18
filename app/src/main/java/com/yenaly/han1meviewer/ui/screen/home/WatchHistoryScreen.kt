@@ -68,6 +68,7 @@ import com.yenaly.han1meviewer.logic.model.OnlineWatchHistorySort
 import com.yenaly.han1meviewer.logic.state.PageLoadingState
 import com.yenaly.han1meviewer.logic.state.WebsiteState
 import com.yenaly.han1meviewer.ui.component.ConfirmDialog
+import com.yenaly.han1meviewer.ui.component.DownloadedBadge
 import com.yenaly.han1meviewer.ui.component.LoadMoreFooter
 import com.yenaly.han1meviewer.ui.component.PageContent
 import com.yenaly.han1meviewer.ui.component.PaginationPager
@@ -683,6 +684,12 @@ private fun WatchHistoryCard(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                 )
+                if (history.videoCode.isNotBlank()) {
+                    DownloadedBadge(
+                        videoCode = history.videoCode,
+                        modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                    )
+                }
                 if (progressMinutes > 0) {
                     Surface(
                         color = Color.Black.copy(alpha = 0.65f),

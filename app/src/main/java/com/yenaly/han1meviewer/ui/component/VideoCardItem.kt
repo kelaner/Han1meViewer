@@ -19,14 +19,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -35,16 +32,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yenaly.han1meviewer.R
-import com.yenaly.han1meviewer.logic.DatabaseRepo
 import com.yenaly.han1meviewer.logic.model.VideoItemType
 import com.yenaly.han1meviewer.ui.preview.ComponentPreview
 import com.yenaly.han1meviewer.ui.preview.fakeVideosItem
 import com.yenaly.han1meviewer.ui.screen.RetryableImage
 import com.yenaly.han1meviewer.util.DisplayTextLocalizer
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 
 
 /**
@@ -123,29 +116,6 @@ fun VideoCardItem(
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.labelSmall,
                         )
-                    }
-                    if (isDownloaded) {
-                        Row(
-                            modifier = Modifier
-                                .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_baseline_download_24),
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(12.dp),
-                            )
-                            Text(
-                                text = stringResource(R.string.downloaded),
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
                     }
                 }
 
@@ -230,6 +200,10 @@ fun VideoCardItem(
                         }
                     }
                 }
+                DownloadedBadge(
+                    isDownloaded = isDownloaded,
+                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                )
             }
 
             Text(
@@ -289,18 +263,6 @@ fun VideoCardItem(
             }
         }
     }
-}
-
-@Composable
-private fun rememberDownloadedStatus(videoCode: String): Boolean {
-    if (LocalInspectionMode.current) return false
-    val status = remember(videoCode) {
-        DatabaseRepo.HanimeDownload.downloadedVideoCodes
-            .map { videoCode in it }
-            .distinctUntilChanged()
-    }
-    val isDownloaded by status.collectAsStateWithLifecycle(initialValue = false)
-    return isDownloaded
 }
 
 @Preview(showBackground = true)

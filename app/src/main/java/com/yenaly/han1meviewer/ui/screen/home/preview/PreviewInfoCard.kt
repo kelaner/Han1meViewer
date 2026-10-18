@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.yenaly.han1meviewer.R
 import com.yenaly.han1meviewer.logic.model.HanimePreview
+import com.yenaly.han1meviewer.ui.component.DownloadedBadge
 import com.yenaly.han1meviewer.ui.component.TagChipGroup
 import com.yenaly.han1meviewer.ui.component.lazy.LazyRow
 import com.yenaly.han1meviewer.ui.preview.ComponentPreview
@@ -78,6 +79,12 @@ fun PreviewInfoCard(
                             )
                         )
                 )
+                previewInfo.videoCode?.takeIf { it.isNotBlank() }?.let { videoCode ->
+                    DownloadedBadge(
+                        videoCode = videoCode,
+                        modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                    )
+                }
                 SelectionContainer(
                     modifier = Modifier
                         .align(Alignment.BottomStart)

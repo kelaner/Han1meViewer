@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.yenaly.han1meviewer.R
+import com.yenaly.han1meviewer.ui.component.DownloadedBadge
 import com.yenaly.han1meviewer.ui.component.lazy.LazyColumn
 import com.yenaly.han1meviewer.ui.preview.ComponentPreview
 import com.yenaly.han1meviewer.ui.preview.fakeHeroItems
@@ -135,6 +136,12 @@ private fun HeroQueueItem(
                 error = painterResource(R.drawable.h_chan_load_failed),
                 contentScale = ContentScale.Crop
             )
+            item.videoCode?.takeIf { it.isNotBlank() }?.let { videoCode ->
+                DownloadedBadge(
+                    videoCode = videoCode,
+                    modifier = Modifier.align(Alignment.TopStart).padding(2.dp),
+                )
+            }
         }
         Spacer(Modifier.width(10.dp))
         Text(

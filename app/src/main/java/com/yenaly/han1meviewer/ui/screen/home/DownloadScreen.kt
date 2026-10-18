@@ -20,7 +20,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -282,10 +281,15 @@ fun DownloadScreen(
                         contentDescription = stringResource(R.string.start_all),
                     )
                 }
-                TextButton(
+                IconButton(
                     onClick = { handleEvent(DownloadEvent.OnRefreshAllLowQualitySources) },
                     enabled = !batchRefreshing && sourceRefresh.loadingVideoId == null,
-                ) { Text(if (batchRefreshing) "更新中" else "一键更新") }
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_baseline_update_24),
+                        contentDescription = if (batchRefreshing) "更新中" else "一键更新",
+                    )
+                }
                 FilledIconButton(
                     onClick = { handleEvent(DownloadEvent.OnPauseAll(uiState.downloadingItems)) },
                     enabled = uiState.downloadingItems.isNotEmpty()

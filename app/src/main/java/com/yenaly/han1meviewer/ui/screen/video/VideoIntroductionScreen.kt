@@ -99,6 +99,7 @@ import com.yenaly.han1meviewer.logic.model.HanimeInfo
 import com.yenaly.han1meviewer.logic.model.HanimeVideo
 import com.yenaly.han1meviewer.logic.state.VideoLoadingState
 import com.yenaly.han1meviewer.ui.component.BottomSheetHandler
+import com.yenaly.han1meviewer.ui.component.DownloadedBadge
 import com.yenaly.han1meviewer.ui.component.ExpandableRichText
 import com.yenaly.han1meviewer.ui.component.TagChipGroup
 import com.yenaly.han1meviewer.ui.component.VideoCardItem
@@ -1117,15 +1118,25 @@ private fun PlaylistBottomSheet(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        AsyncImage(
-                            model = item.coverUrl,
-                            contentDescription = item.title,
+                        Box(
                             modifier = Modifier
                                 .width(100.dp)
                                 .height(66.dp)
                                 .clip(RoundedCornerShape(10.dp)),
-                            contentScale = ContentScale.Crop,
-                        )
+                        ) {
+                            AsyncImage(
+                                model = item.coverUrl,
+                                contentDescription = item.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                            if (item.videoCode.isNotBlank()) {
+                                DownloadedBadge(
+                                    videoCode = item.videoCode,
+                                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                                )
+                            }
+                        }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = item.title,

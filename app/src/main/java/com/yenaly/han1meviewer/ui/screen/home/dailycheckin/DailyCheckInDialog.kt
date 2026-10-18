@@ -59,6 +59,7 @@ import com.yenaly.han1meviewer.R
 import com.yenaly.han1meviewer.logic.entity.CheckInRecordEntity
 import com.yenaly.han1meviewer.logic.entity.CheckInType
 import com.yenaly.han1meviewer.logic.entity.WatchHistoryEntity
+import com.yenaly.han1meviewer.ui.component.DownloadedBadge
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -517,12 +518,18 @@ fun ExistingRecordItem(
                                     .heightIn(max = 90.dp)
                                     .clickable { onNavigateToVideo(code) }
                             ) {
-                                AsyncImage(
-                                    model = coverUrl,
-                                    contentDescription = title,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
+                                Box {
+                                    AsyncImage(
+                                        model = coverUrl,
+                                        contentDescription = title,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    DownloadedBadge(
+                                        videoCode = code,
+                                        modifier = Modifier.align(Alignment.TopStart).padding(2.dp),
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
@@ -608,15 +615,25 @@ fun WatchHistoryItem(
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AsyncImage(
-                model = watch.coverUrl,
-                contentDescription = null,
+            Box(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .clickable(onClick = onNavigateToVideo),
-                contentScale = ContentScale.Crop
-            )
+            ) {
+                AsyncImage(
+                    model = watch.coverUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                if (watch.videoCode.isNotBlank()) {
+                    DownloadedBadge(
+                        videoCode = watch.videoCode,
+                        modifier = Modifier.align(Alignment.TopStart).padding(2.dp),
+                    )
+                }
+            }
             Spacer(modifier = Modifier.width(8.dp))
             Column(
                 modifier = Modifier
